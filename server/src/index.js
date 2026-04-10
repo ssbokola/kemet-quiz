@@ -2,8 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
+// Load .env in dev, Railway injects env vars directly in prod
 const envPath = path.join(__dirname, '..', '..', '.env');
-require('dotenv').config({ path: envPath, override: true });
+try { require('dotenv').config({ path: envPath, override: true }); } catch {};
 
 const cors = require('cors');
 
