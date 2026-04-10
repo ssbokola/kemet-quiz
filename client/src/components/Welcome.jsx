@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-function Welcome({ onSubmit }) {
+function Welcome({ quizTitle, onSubmit }) {
   const [name, setName] = useState('');
 
   const handleSubmit = (e) => {
@@ -13,20 +13,20 @@ function Welcome({ onSubmit }) {
   return (
     <div className="welcome-section">
       <div className="welcome-card">
-        <div className="welcome-icon">👋</div>
-        <h2>Bienvenue !</h2>
-        <p>Entrez votre prénom pour commencer</p>
+        <div className="welcome-icon">📝</div>
+        <h2>{quizTitle}</h2>
+        <p>Entrez votre prenom pour commencer le quiz</p>
         <form onSubmit={handleSubmit} className="welcome-form">
           <input
             type="text"
-            placeholder="Votre prénom"
+            placeholder="Votre prenom"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="name-input"
             autoFocus
           />
           <button type="submit" disabled={!name.trim()} className="btn btn-primary">
-            Commencer
+            Commencer le quiz
           </button>
         </form>
       </div>

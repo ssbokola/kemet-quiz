@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 
-function Results({ playerName, questions, userAnswers, score, onRestart }) {
-  const percentage = Math.round((score / questions.length) * 100);
+function Results({ playerName, title, score, total, correction }) {
+  const percentage = Math.round((score / total) * 100);
 
   const getGrade = () => {
     if (percentage >= 80) return { label: 'Excellent !', color: '#16a34a' };
@@ -26,9 +26,10 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
     doc.setFontSize(24);
     doc.setFont('helvetica', 'bold');
     doc.text('KEMET QUIZ', pageWidth / 2, 20, { align: 'center' });
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.text('Resultats du quiz', pageWidth / 2, 32, { align: 'center' });
+    const titleLines = doc.splitTextToSize(title, pageWidth - 40);
+    doc.text(titleLines, pageWidth / 2, 30, { align: 'center' });
     doc.setFontSize(10);
     doc.text(new Date().toLocaleDateString('fr-FR'), pageWidth / 2, 40, { align: 'center' });
 
@@ -48,7 +49,7 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
     doc.setFont('helvetica', 'bold');
     const [r, g, b] = hexToRgb(grade.color);
     doc.setTextColor(r, g, b);
-    doc.text(`${score} / ${questions.length}`, pageWidth / 2 - 20, y + 18, { align: 'center' });
+    doc.text(`${score} / ${total}`, pageWidth / 2 - 20, y + 18, { align: 'center' });
     doc.setFontSize(14);
     doc.text(`${percentage}% - ${grade.label}`, pageWidth / 2 + 25, y + 18);
     y += 45;
@@ -60,16 +61,13 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
     doc.text('Detail des reponses', margin, y);
     y += 10;
 
-    questions.forEach((q, idx) => {
+    correction.forEach((item, idx) => {
       if (y > 260) {
         doc.addPage();
         y = 20;
       }
 
-      const isCorrect = userAnswers[idx] === q.answer;
-
-      // Question card
-      const [cr, cg, cb] = isCorrect ? [22, 163, 74] : [220, 38, 38];
+      const [cr, cg, cb] = item.isCorrect ? [22, 163, 74] : [220, 38, 38];
       doc.setDrawColor(cr, cg, cb);
       doc.setLineWidth(0.5);
       doc.line(margin, y, margin, y + 6);
@@ -77,20 +75,20 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
       doc.setFontSize(9);
       doc.setTextColor(cr, cg, cb);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${isCorrect ? 'CORRECT' : 'INCORRECT'} - Question ${idx + 1}`, margin + 3, y + 4);
+      doc.text(`${item.isCorrect ? 'CORRECT' : 'INCORRECT'} - Question ${idx + 1}`, margin + 3, y + 4);
       y += 10;
 
       doc.setTextColor(26, 26, 46);
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      const questionLines = doc.splitTextToSize(q.question, contentWidth - 5);
+      const questionLines = doc.splitTextToSize(item.question, contentWidth - 5);
       doc.text(questionLines, margin + 3, y);
       y += questionLines.length * 5 + 3;
 
-      if (!isCorrect) {
+      if (!item.isCorrect) {
         doc.setFontSize(9);
         doc.setTextColor(220, 38, 38);
-        doc.text(`Votre reponse : ${userAnswers[idx]}  |  Bonne reponse : ${q.answer}`, margin + 3, y);
+        doc.text(`Votre reponse : ${item.userAnswer}  |  Bonne reponse : ${item.correctAnswer}`, margin + 3, y);
         y += 5;
       }
 
@@ -114,25 +112,23 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
     const doc = generatePDF();
     const pdfBlob = doc.output('blob');
 
-    // On mobile, try native share with file
     if (navigator.share && navigator.canShare) {
       const file = new File([pdfBlob], `kemet-quiz-${playerName}.pdf`, { type: 'application/pdf' });
       if (navigator.canShare({ files: [file] })) {
         navigator.share({
           title: `Resultats Quiz - ${playerName}`,
-          text: `${playerName} a obtenu ${score}/${questions.length} (${percentage}%) au Kemet Quiz !`,
+          text: `${playerName} a obtenu ${score}/${total} (${percentage}%) au Kemet Quiz !`,
           files: [file],
         });
         return;
       }
     }
 
-    // Fallback: download PDF + open WhatsApp with message
     doc.save(`kemet-quiz-${playerName}.pdf`);
     const message = encodeURIComponent(
-      `Bonjour,\nVoici mes resultats au Kemet Quiz :\n` +
+      `Bonjour,\nVoici mes resultats au Kemet Quiz "${title}" :\n` +
       `Candidat : ${playerName}\n` +
-      `Score : ${score}/${questions.length} (${percentage}%) - ${grade.label}\n\n` +
+      `Score : ${score}/${total} (${percentage}%) - ${grade.label}\n\n` +
       `Le PDF est en piece jointe.`
     );
     window.open(`https://wa.me/?text=${message}`, '_blank');
@@ -145,7 +141,7 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
         <h2 style={{ color: grade.color }}>{grade.label}</h2>
         <div className="score-circle" style={{ borderColor: grade.color }}>
           <span className="score-number">{score}</span>
-          <span className="score-total">/ {questions.length}</span>
+          <span className="score-total">/ {total}</span>
         </div>
         <p className="score-percent">{percentage}%</p>
       </div>
@@ -161,30 +157,23 @@ function Results({ playerName, questions, userAnswers, score, onRestart }) {
 
       <div className="review">
         <h3>Correction</h3>
-        {questions.map((q, idx) => {
-          const isCorrect = userAnswers[idx] === q.answer;
-          return (
-            <div key={idx} className={`review-card ${isCorrect ? 'correct' : 'incorrect'}`}>
-              <div className="review-header">
-                <span className={`review-icon ${isCorrect ? 'correct' : 'incorrect'}`}>
-                  {isCorrect ? '✓' : '✗'}
-                </span>
-                <span className="review-q">Question {idx + 1}</span>
-              </div>
-              <p className="question-text">{q.question}</p>
-              {!isCorrect && (
-                <p className="correct-answer">
-                  Votre reponse : <strong>{userAnswers[idx]}</strong> — Bonne reponse : <strong>{q.answer}</strong>
-                </p>
-              )}
+        {correction.map((item, idx) => (
+          <div key={idx} className={`review-card ${item.isCorrect ? 'correct' : 'incorrect'}`}>
+            <div className="review-header">
+              <span className={`review-icon ${item.isCorrect ? 'correct' : 'incorrect'}`}>
+                {item.isCorrect ? '✓' : '✗'}
+              </span>
+              <span className="review-q">Question {idx + 1}</span>
             </div>
-          );
-        })}
+            <p className="question-text">{item.question}</p>
+            {!item.isCorrect && (
+              <p className="correct-answer">
+                Votre reponse : <strong>{item.userAnswer}</strong> — Bonne reponse : <strong>{item.correctAnswer}</strong>
+              </p>
+            )}
+          </div>
+        ))}
       </div>
-
-      <button className="btn btn-primary" onClick={onRestart}>
-        Nouveau quiz
-      </button>
     </div>
   );
 }

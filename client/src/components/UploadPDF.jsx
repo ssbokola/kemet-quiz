@@ -59,7 +59,7 @@ function UploadPDF({ onQuizGenerated }) {
       <form onSubmit={handleSubmit} className="upload-form">
         <label className="file-label" htmlFor="pdf-input">
           <span className="file-icon">📄</span>
-          <span>{fileName || 'Choisir un fichier PDF'}</span>
+          <span>{fileName || 'Choisir un support de formation (PDF)'}</span>
         </label>
         <input
           id="pdf-input"
@@ -70,7 +70,7 @@ function UploadPDF({ onQuizGenerated }) {
           className="file-input"
         />
         <button type="submit" disabled={loading || !fileName} className="btn btn-primary">
-          {loading ? 'Génération du quiz...' : 'Générer le quiz'}
+          {loading ? 'Generation du quiz...' : 'Generer le quiz'}
         </button>
       </form>
 

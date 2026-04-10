@@ -459,3 +459,75 @@
   background: #1fb855;
   transform: translateY(-1px);
 }
+
+/* Admin - Link section */
+.link-section {
+  display: flex;
+  justify-content: center;
+}
+
+.success-card {
+  background: white;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  text-align: center;
+  width: 100%;
+}
+
+.success-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #16a34a;
+  color: white;
+  font-size: 1.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.success-card h2 {
+  font-size: 1.4rem;
+  color: #1a1a2e;
+  margin-bottom: 8px;
+}
+
+.quiz-title {
+  color: #888;
+  margin-bottom: 24px;
+}
+
+.link-box {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.link-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #eee;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  color: #1a1a2e;
+  background: #f8f6f4;
+  outline: none;
+}
+
+.btn-copy {
+  padding: 12px 20px;
+  border: 2px solid #c8a45a;
+  border-radius: 10px;
+  background: white;
+  color: #c8a45a;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-copy:hover {
+  background: #fdf6e3;
+}
