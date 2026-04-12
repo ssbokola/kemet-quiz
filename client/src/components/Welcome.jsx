@@ -15,11 +15,11 @@ function Welcome({ quizTitle, onSubmit }) {
       <div className="welcome-card">
         <div className="welcome-icon">📝</div>
         <h2>{quizTitle}</h2>
-        <p>Entrez votre prenom pour commencer le quiz</p>
+        <p>Entrez votre prénom pour commencer le quiz</p>
         <form onSubmit={handleSubmit} className="welcome-form">
           <input
             type="text"
-            placeholder="Votre prenom"
+            placeholder="Votre prénom"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="name-input"

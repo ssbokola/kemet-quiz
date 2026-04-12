@@ -39,13 +39,13 @@ function AdminPage() {
         <div className="link-section">
           <div className="success-card">
             <div className="success-icon">✓</div>
-            <h2>Quiz genere avec succes !</h2>
+            <h2>Quiz généré avec succès !</h2>
             <p className="quiz-title">{quizTitle}</p>
 
             <div className="link-box">
               <input type="text" value={quizLink} readOnly className="link-input" />
-              <button className="btn btn-copy" onClick={handleCopy}>
-                {copied ? 'Copie !' : 'Copier'}
+              <button className={`btn btn-copy ${copied ? 'copied' : ''}`} onClick={handleCopy}>
+                {copied ? '✓ Copié !' : 'Copier'}
               </button>
             </div>
 
