@@ -45,7 +45,7 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
 
     const pdfBase64 = req.file.buffer.toString('base64');
 
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
     let result;
     let lastError;
 

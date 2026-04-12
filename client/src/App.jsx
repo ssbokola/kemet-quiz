@@ -8,6 +8,7 @@ function App() {
     <BrowserRouter>
       <div className="app">
         <header className="app-header">
+          <img src="/kemet-logo.svg" alt="Kemet Services" className="app-logo" />
           <h1>Kemet Quiz</h1>
           <p>Transformez vos PDF en quiz interactifs</p>
         </header>
