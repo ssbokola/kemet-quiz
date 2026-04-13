@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
+const Anthropic = require('@anthropic-ai/sdk').default;
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const path = require('path');
 // Load .env in dev, Railway injects env vars directly in prod
@@ -31,7 +32,53 @@ const upload = multer({
   },
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const QUIZ_PROMPT = 'Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement 10 questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A"}]}';
+
+// Claude (primary)
+async function generateWithClaude(pdfBase64) {
+  const anthropic = new Anthropic();
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    system: QUIZ_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
+          },
+          { type: 'text', text: 'Génère un quiz de 10 questions MCQ à partir de ce document PDF.' },
+        ],
+      },
+    ],
+  });
+  return message.content[0].text;
+}
+
+// Gemini (fallback)
+async function generateWithGemini(pdfBase64) {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  const content = [
+    { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
+    { text: QUIZ_PROMPT + '\nGénère un quiz de 10 questions MCQ à partir de ce document PDF.' },
+  ];
+
+  for (const modelName of models) {
+    try {
+      console.log(`Gemini fallback: trying ${modelName}`);
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(content);
+      console.log(`Success with Gemini ${modelName}`);
+      return result.response.text();
+    } catch (err) {
+      console.warn(`Gemini ${modelName} failed: ${err.message}`);
+    }
+  }
+  throw new Error('Tous les modèles Gemini ont échoué');
+}
 
 // In-memory quiz store
 const quizzes = new Map();
@@ -44,40 +91,18 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     }
 
     const pdfBase64 = req.file.buffer.toString('base64');
+    let responseText;
 
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
-    let result;
-    let lastError;
-
-    for (const modelName of models) {
-      try {
-        console.log(`Trying model: ${modelName}`);
-        const model = genAI.getGenerativeModel({ model: modelName });
-        result = await model.generateContent([
-          {
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: pdfBase64,
-            },
-          },
-          {
-            text: `Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement 10 questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A"}]}`,
-          },
-        ]);
-        console.log(`Success with model: ${modelName}`);
-        break;
-      } catch (modelErr) {
-        console.warn(`Model ${modelName} failed: ${modelErr.message}`);
-        lastError = modelErr;
-        result = null;
-      }
+    // Try Claude first, fallback to Gemini
+    try {
+      console.log('Trying Claude (primary)...');
+      responseText = await generateWithClaude(pdfBase64);
+      console.log('Success with Claude');
+    } catch (claudeErr) {
+      console.warn(`Claude failed: ${claudeErr.message}`);
+      console.log('Falling back to Gemini...');
+      responseText = await generateWithGemini(pdfBase64);
     }
-
-    if (!result) {
-      throw lastError;
-    }
-
-    const responseText = result.response.text();
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -112,7 +137,6 @@ app.get('/api/quiz/:id', (req, res) => {
     return res.status(404).json({ error: 'Quiz introuvable' });
   }
 
-  // Send questions without answers
   const safeQuestions = quiz.questions.map((q) => ({
     question: q.question,
     options: q.options,
@@ -146,7 +170,6 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     };
   });
 
-  // Save result
   quiz.results.push({
     playerName,
     score,
