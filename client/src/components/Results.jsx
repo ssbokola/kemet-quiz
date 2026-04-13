@@ -88,8 +88,15 @@ function Results({ playerName, title, score, total, correction }) {
       if (!item.isCorrect) {
         doc.setFontSize(9);
         doc.setTextColor(220, 38, 38);
-        doc.text(`Votre reponse : ${item.userAnswer}  |  Bonne reponse : ${item.correctAnswer}`, margin + 3, y);
-        y += 5;
+        const userText = getOptionText(item.options, item.userAnswer);
+        const correctText = getOptionText(item.options, item.correctAnswer);
+        const answerLines = doc.splitTextToSize(`Votre réponse : ${userText}`, contentWidth - 5);
+        doc.text(answerLines, margin + 3, y);
+        y += answerLines.length * 4 + 2;
+        doc.setTextColor(22, 163, 74);
+        const correctLines = doc.splitTextToSize(`Bonne réponse : ${correctText}`, contentWidth - 5);
+        doc.text(correctLines, margin + 3, y);
+        y += correctLines.length * 4 + 2;
       }
 
       y += 8;
@@ -167,15 +174,24 @@ function Results({ playerName, title, score, total, correction }) {
             </div>
             <p className="question-text">{item.question}</p>
             {!item.isCorrect && (
-              <p className="correct-answer">
-                Votre reponse : <strong>{item.userAnswer}</strong> — Bonne reponse : <strong>{item.correctAnswer}</strong>
-              </p>
+              <div className="correct-answer">
+                <p>Votre réponse : <strong>{getOptionText(item.options, item.userAnswer)}</strong></p>
+                <p>Bonne réponse : <strong>{getOptionText(item.options, item.correctAnswer)}</strong></p>
+              </div>
             )}
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+function getOptionText(options, letter) {
+  const idx = letter.charCodeAt(0) - 65;
+  if (idx >= 0 && idx < options.length) {
+    return options[idx].replace(/^[A-D]\)\s*/, '');
+  }
+  return letter;
 }
 
 function hexToRgb(hex) {
