@@ -1,9 +1,12 @@
 import { useState, useRef } from 'react';
 
+const QUESTION_OPTIONS = [5, 10, 15, 20, 30];
+
 function UploadPDF({ onQuizGenerated }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
+  const [numQuestions, setNumQuestions] = useState(10);
   const fileRef = useRef();
 
   const handleFileChange = (e) => {
@@ -28,6 +31,7 @@ function UploadPDF({ onQuizGenerated }) {
     try {
       const formData = new FormData();
       formData.append('pdf', file);
+      formData.append('numQuestions', numQuestions);
 
       const res = await fetch('/api/upload-pdf', {
         method: 'POST',
@@ -69,8 +73,27 @@ function UploadPDF({ onQuizGenerated }) {
           onChange={handleFileChange}
           className="file-input"
         />
+
+        {fileName && (
+          <div className="question-count-section">
+            <label className="question-count-label">Nombre de questions :</label>
+            <div className="question-count-options">
+              {QUESTION_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`question-count-btn ${numQuestions === n ? 'active' : ''}`}
+                  onClick={() => setNumQuestions(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button type="submit" disabled={loading || !fileName} className="btn btn-primary">
-          {loading ? 'Generation du quiz...' : 'Generer le quiz'}
+          {loading ? 'Generation du quiz...' : `Generer ${numQuestions} questions`}
         </button>
       </form>
 

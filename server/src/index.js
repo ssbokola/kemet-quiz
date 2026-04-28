@@ -32,15 +32,18 @@ const upload = multer({
   },
 });
 
-const QUIZ_PROMPT = 'Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement 10 questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A"}]}';
+function getQuizPrompt(numQuestions) {
+  return `Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement ${numQuestions} questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A"}]}`;
+}
 
 // Claude (primary)
-async function generateWithClaude(pdfBase64) {
+async function generateWithClaude(pdfBase64, numQuestions) {
+  const prompt = getQuizPrompt(numQuestions);
   const anthropic = new Anthropic();
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system: QUIZ_PROMPT,
+    max_tokens: numQuestions > 15 ? 8192 : 4096,
+    system: prompt,
     messages: [
       {
         role: 'user',
@@ -49,7 +52,7 @@ async function generateWithClaude(pdfBase64) {
             type: 'document',
             source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
           },
-          { type: 'text', text: 'Génère un quiz de 10 questions MCQ à partir de ce document PDF.' },
+          { type: 'text', text: `Génère un quiz de ${numQuestions} questions MCQ à partir de ce document PDF.` },
         ],
       },
     ],
@@ -58,12 +61,13 @@ async function generateWithClaude(pdfBase64) {
 }
 
 // Gemini (fallback)
-async function generateWithGemini(pdfBase64) {
+async function generateWithGemini(pdfBase64, numQuestions) {
+  const prompt = getQuizPrompt(numQuestions);
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
   const content = [
     { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
-    { text: QUIZ_PROMPT + '\nGénère un quiz de 10 questions MCQ à partir de ce document PDF.' },
+    { text: prompt + `\nGénère un quiz de ${numQuestions} questions MCQ à partir de ce document PDF.` },
   ];
 
   for (const modelName of models) {
@@ -91,17 +95,20 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     }
 
     const pdfBase64 = req.file.buffer.toString('base64');
+    const numQuestions = parseInt(req.body.numQuestions) || 10;
     let responseText;
+
+    console.log(`Generating quiz with ${numQuestions} questions...`);
 
     // Try Claude first, fallback to Gemini
     try {
       console.log('Trying Claude (primary)...');
-      responseText = await generateWithClaude(pdfBase64);
+      responseText = await generateWithClaude(pdfBase64, numQuestions);
       console.log('Success with Claude');
     } catch (claudeErr) {
       console.warn(`Claude failed: ${claudeErr.message}`);
       console.log('Falling back to Gemini...');
-      responseText = await generateWithGemini(pdfBase64);
+      responseText = await generateWithGemini(pdfBase64, numQuestions);
     }
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);

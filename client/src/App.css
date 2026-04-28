@@ -78,6 +78,55 @@
   display: none;
 }
 
+/* Question count selector */
+.question-count-section {
+  width: 100%;
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+.question-count-label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin-bottom: 12px;
+}
+
+.question-count-options {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.question-count-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 2px solid #e0e0e0;
+  background: white;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.question-count-btn:hover {
+  border-color: #d4c89a;
+  background: #fdfaf3;
+  transform: translateY(-2px);
+}
+
+.question-count-btn.active {
+  border-color: #c8a45a;
+  background: #c8a45a;
+  color: white;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(200, 164, 90, 0.35);
+}
+
 /* Buttons */
 .btn {
   padding: 12px 28px;
