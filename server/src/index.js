@@ -36,11 +36,11 @@ function getQuizPrompt(numQuestions) {
   return `Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement ${numQuestions} questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A"}]}`;
 }
 
-// Claude (primary)
-async function generateWithClaude(pdfBase64, numQuestions) {
+// Claude (primary) — streaming to keep the HTTP connection alive
+async function generateWithClaude(pdfBase64, numQuestions, onProgress) {
   const prompt = getQuizPrompt(numQuestions);
   const anthropic = new Anthropic();
-  const message = await anthropic.messages.create({
+  const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-20250514',
     max_tokens: numQuestions > 15 ? 8192 : 4096,
     system: prompt,
@@ -57,7 +57,15 @@ async function generateWithClaude(pdfBase64, numQuestions) {
       },
     ],
   });
-  return message.content[0].text;
+
+  let fullText = '';
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta?.text) {
+      fullText += event.delta.text;
+      if (onProgress) onProgress();
+    }
+  }
+  return fullText;
 }
 
 // Gemini (fallback)
@@ -87,11 +95,25 @@ async function generateWithGemini(pdfBase64, numQuestions) {
 // In-memory quiz store
 const quizzes = new Map();
 
-// Admin: upload PDF → generate quiz → return quiz link
+// Admin: upload PDF → generate quiz → stream progress + final link (NDJSON)
 app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
+  // NDJSON streaming response — keeps the proxy connection alive
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const send = (obj) => {
+    res.write(JSON.stringify(obj) + '\n');
+  };
+
+  // Heartbeat every 10s to prevent proxy timeout
+  const heartbeat = setInterval(() => send({ type: 'ping' }), 10000);
+
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'Aucun fichier PDF fourni' });
+      send({ type: 'error', error: 'Aucun fichier PDF fourni' });
+      return;
     }
 
     const pdfBase64 = req.file.buffer.toString('base64');
@@ -99,26 +121,29 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     let responseText;
 
     console.log(`Generating quiz with ${numQuestions} questions...`);
+    send({ type: 'progress', message: `Analyse du PDF (${numQuestions} questions)...` });
 
-    // Try Claude first, fallback to Gemini
     try {
       console.log('Trying Claude (primary)...');
-      responseText = await generateWithClaude(pdfBase64, numQuestions);
+      responseText = await generateWithClaude(pdfBase64, numQuestions, () => {
+        // each delta token from Claude — keep stream active
+      });
       console.log('Success with Claude');
     } catch (claudeErr) {
       console.warn(`Claude failed: ${claudeErr.message}`);
       console.log('Falling back to Gemini...');
+      send({ type: 'progress', message: 'Bascule sur le modèle de secours...' });
       responseText = await generateWithGemini(pdfBase64, numQuestions);
     }
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return res.status(500).json({ error: 'Réponse IA invalide' });
+      send({ type: 'error', error: 'Réponse IA invalide' });
+      return;
     }
 
     const quiz = JSON.parse(jsonMatch[0]);
 
-    // Generate unique ID and store quiz
     const quizId = crypto.randomBytes(4).toString('hex');
     const title = req.body.title || req.file.originalname.replace('.pdf', '');
     quizzes.set(quizId, {
@@ -129,11 +154,13 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     });
 
     console.log(`Quiz created: ${quizId} (${quiz.questions.length} questions)`);
-
-    res.json({ quizId, title, questionsCount: quiz.questions.length });
+    send({ type: 'done', quizId, title, questionsCount: quiz.questions.length });
   } catch (err) {
     console.error('Erreur /api/upload-pdf:', err.message);
-    res.status(500).json({ error: err.message });
+    send({ type: 'error', error: err.message });
+  } finally {
+    clearInterval(heartbeat);
+    res.end();
   }
 });
 

@@ -7,6 +7,7 @@ function UploadPDF({ onQuizGenerated }) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [numQuestions, setNumQuestions] = useState(10);
+  const [progressMsg, setProgressMsg] = useState('');
   const fileRef = useRef();
 
   const handleFileChange = (e) => {
@@ -27,6 +28,7 @@ function UploadPDF({ onQuizGenerated }) {
 
     setLoading(true);
     setError('');
+    setProgressMsg('Envoi du document...');
 
     try {
       const formData = new FormData();
@@ -38,23 +40,48 @@ function UploadPDF({ onQuizGenerated }) {
         body: formData,
       });
 
-      const text = await res.text();
-
       if (!res.ok) {
-        let errorMsg = `Erreur serveur (${res.status})`;
-        try {
-          const errData = JSON.parse(text);
-          errorMsg = errData.error || errorMsg;
-        } catch {}
-        throw new Error(errorMsg);
+        throw new Error(`Erreur serveur (${res.status})`);
       }
 
-      const data = JSON.parse(text);
-      onQuizGenerated(data);
+      // Read NDJSON stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let done = false;
+      let result = null;
+
+      while (!done) {
+        const { value, done: streamDone } = await reader.read();
+        if (streamDone) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let msg;
+          try { msg = JSON.parse(line); } catch { continue; }
+
+          if (msg.type === 'progress' && msg.message) {
+            setProgressMsg(msg.message);
+          } else if (msg.type === 'done') {
+            result = msg;
+            done = true;
+          } else if (msg.type === 'error') {
+            throw new Error(msg.error || 'Erreur inconnue');
+          }
+        }
+      }
+
+      if (!result) throw new Error('Réponse du serveur incomplète');
+      onQuizGenerated(result);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setProgressMsg('');
     }
   };
 
@@ -100,7 +127,10 @@ function UploadPDF({ onQuizGenerated }) {
       {loading && (
         <div className="loader">
           <div className="spinner" />
-          <p>Analyse du PDF en cours... Cela peut prendre quelques secondes.</p>
+          <p>{progressMsg || 'Analyse du PDF en cours...'}</p>
+          <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '8px' }}>
+            Cela peut prendre 1 à 2 minutes pour les gros PDF.
+          </p>
         </div>
       )}
 
