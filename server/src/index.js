@@ -22,7 +22,10 @@ app.use(express.static(clientBuild));
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024 },
+  limits: {
+    fileSize: 30 * 1024 * 1024,
+    fieldSize: 10 * 1024 * 1024, // allow large `text` field (extracted PDF text)
+  },
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -37,25 +40,25 @@ function getQuizPrompt(numQuestions) {
 }
 
 // Claude (primary) — streaming to keep the HTTP connection alive
-async function generateWithClaude(pdfBase64, numQuestions, onProgress) {
+// `source` is either { type: 'pdf', base64 } or { type: 'text', text }
+async function generateWithClaude(source, numQuestions, onProgress) {
   const prompt = getQuizPrompt(numQuestions);
   const anthropic = new Anthropic();
+
+  const userContent = source.type === 'pdf'
+    ? [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: source.base64 } },
+        { type: 'text', text: `Génère un quiz de ${numQuestions} questions MCQ à partir de ce document PDF.` },
+      ]
+    : [
+        { type: 'text', text: `Voici le contenu du document de formation :\n\n${source.text}\n\nGénère un quiz de ${numQuestions} questions MCQ à partir de ce contenu.` },
+      ];
+
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-20250514',
     max_tokens: numQuestions > 15 ? 8192 : 4096,
     system: prompt,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
-          },
-          { type: 'text', text: `Génère un quiz de ${numQuestions} questions MCQ à partir de ce document PDF.` },
-        ],
-      },
-    ],
+    messages: [{ role: 'user', content: userContent }],
   });
 
   let fullText = '';
@@ -69,14 +72,19 @@ async function generateWithClaude(pdfBase64, numQuestions, onProgress) {
 }
 
 // Gemini (fallback)
-async function generateWithGemini(pdfBase64, numQuestions) {
+async function generateWithGemini(source, numQuestions) {
   const prompt = getQuizPrompt(numQuestions);
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-  const content = [
-    { inlineData: { mimeType: 'application/pdf', data: pdfBase64 } },
-    { text: prompt + `\nGénère un quiz de ${numQuestions} questions MCQ à partir de ce document PDF.` },
-  ];
+
+  const content = source.type === 'pdf'
+    ? [
+        { inlineData: { mimeType: 'application/pdf', data: source.base64 } },
+        { text: prompt + `\nGénère un quiz de ${numQuestions} questions MCQ à partir de ce document PDF.` },
+      ]
+    : [
+        { text: prompt + `\n\nVoici le contenu du document :\n\n${source.text}\n\nGénère un quiz de ${numQuestions} questions MCQ à partir de ce contenu.` },
+      ];
 
   for (const modelName of models) {
     try {
@@ -95,7 +103,7 @@ async function generateWithGemini(pdfBase64, numQuestions) {
 // In-memory quiz store
 const quizzes = new Map();
 
-// Admin: upload PDF → generate quiz → stream progress + final link (NDJSON)
+// Admin: upload PDF (or extracted text) → generate quiz → stream progress (NDJSON)
 app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
   // NDJSON streaming response — keeps the proxy connection alive
   res.setHeader('Content-Type', 'application/x-ndjson');
@@ -111,29 +119,34 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
   const heartbeat = setInterval(() => send({ type: 'ping' }), 10000);
 
   try {
-    if (!req.file) {
-      send({ type: 'error', error: 'Aucun fichier PDF fourni' });
+    const numQuestions = parseInt(req.body.numQuestions) || 10;
+    const textPayload = req.body.text;
+
+    // Build source: prefer extracted text (fast path), fall back to PDF binary
+    let source;
+    if (textPayload && textPayload.length > 200) {
+      source = { type: 'text', text: textPayload };
+      console.log(`Generating quiz from text (${textPayload.length} chars, ${numQuestions} questions)...`);
+    } else if (req.file) {
+      source = { type: 'pdf', base64: req.file.buffer.toString('base64') };
+      console.log(`Generating quiz from PDF binary (${req.file.size} bytes, ${numQuestions} questions)...`);
+    } else {
+      send({ type: 'error', error: 'Aucun document fourni' });
       return;
     }
 
-    const pdfBase64 = req.file.buffer.toString('base64');
-    const numQuestions = parseInt(req.body.numQuestions) || 10;
     let responseText;
-
-    console.log(`Generating quiz with ${numQuestions} questions...`);
-    send({ type: 'progress', message: `Analyse du PDF (${numQuestions} questions)...` });
+    send({ type: 'progress', message: `Génération du quiz (${numQuestions} questions)...` });
 
     try {
       console.log('Trying Claude (primary)...');
-      responseText = await generateWithClaude(pdfBase64, numQuestions, () => {
-        // each delta token from Claude — keep stream active
-      });
+      responseText = await generateWithClaude(source, numQuestions, () => {});
       console.log('Success with Claude');
     } catch (claudeErr) {
       console.warn(`Claude failed: ${claudeErr.message}`);
       console.log('Falling back to Gemini...');
       send({ type: 'progress', message: 'Bascule sur le modèle de secours...' });
-      responseText = await generateWithGemini(pdfBase64, numQuestions);
+      responseText = await generateWithGemini(source, numQuestions);
     }
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -145,7 +158,8 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     const quiz = JSON.parse(jsonMatch[0]);
 
     const quizId = crypto.randomBytes(4).toString('hex');
-    const title = req.body.title || req.file.originalname.replace('.pdf', '');
+    const fallbackTitle = req.file ? req.file.originalname.replace(/\.pdf$/i, '') : 'Quiz';
+    const title = req.body.title || fallbackTitle;
     quizzes.set(quizId, {
       title,
       questions: quiz.questions,

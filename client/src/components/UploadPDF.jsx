@@ -1,6 +1,23 @@
 import { useState, useRef } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const QUESTION_OPTIONS = [5, 10, 15, 20, 30];
+
+async function extractTextFromPdf(file, onProgress) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    if (onProgress) onProgress(i, pdf.numPages);
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map((item) => item.str).join(' ') + '\n\n';
+  }
+  return text.trim();
+}
 
 function UploadPDF({ onQuizGenerated }) {
   const [loading, setLoading] = useState(false);
@@ -28,12 +45,27 @@ function UploadPDF({ onQuizGenerated }) {
 
     setLoading(true);
     setError('');
-    setProgressMsg('Envoi du document...');
 
     try {
+      // Step 1: extract text in the browser
+      setProgressMsg('Lecture du PDF...');
+      const text = await extractTextFromPdf(file, (cur, total) => {
+        setProgressMsg(`Lecture du PDF (page ${cur}/${total})...`);
+      });
+
       const formData = new FormData();
-      formData.append('pdf', file);
       formData.append('numQuestions', numQuestions);
+      formData.append('title', file.name.replace(/\.pdf$/i, ''));
+
+      if (text && text.length > 200) {
+        // Text extraction succeeded — send only the text (fast path)
+        formData.append('text', text);
+        setProgressMsg('Envoi du texte au modèle...');
+      } else {
+        // Likely a scanned PDF — fall back to sending the binary
+        formData.append('pdf', file);
+        setProgressMsg('PDF scanné détecté — envoi du document complet...');
+      }
 
       const res = await fetch('/api/upload-pdf', {
         method: 'POST',
@@ -129,7 +161,7 @@ function UploadPDF({ onQuizGenerated }) {
           <div className="spinner" />
           <p>{progressMsg || 'Analyse du PDF en cours...'}</p>
           <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '8px' }}>
-            Cela peut prendre 1 à 2 minutes pour les gros PDF.
+            Cela peut prendre 30 secondes à 1 minute.
           </p>
         </div>
       )}
