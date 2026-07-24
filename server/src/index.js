@@ -35,14 +35,25 @@ const upload = multer({
   },
 });
 
-function getQuizPrompt(numQuestions) {
-  return `Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement ${numQuestions} questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A"}]}`;
+const DIFFICULTY_GUIDANCE = {
+  facile: "Niveau FACILE : les questions doivent être basiques et rappeler des faits explicitement présents dans le document. Distracteurs franchement différents de la bonne réponse.",
+  moyen: "Niveau MOYEN : mélange équilibré de questions factuelles et de questions de compréhension nécessitant de relier plusieurs éléments du document. Distracteurs plausibles mais discernables.",
+  difficile: "Niveau DIFFICILE : les questions doivent nécessiter une réflexion approfondie, des cas d'application, ou nuancer des concepts proches. Distracteurs très plausibles qui ciblent les erreurs typiques.",
+};
+
+function getQuizPrompt(numQuestions, difficulty = 'moyen') {
+  const level = DIFFICULTY_GUIDANCE[difficulty] || DIFFICULTY_GUIDANCE.moyen;
+  return `Tu es un générateur de quiz pédagogique. À partir du contenu de ce document, génère exactement ${numQuestions} questions à choix multiple (MCQ). Chaque question a 4 options (A, B, C, D) et une seule bonne réponse. Ajoute pour chaque question une courte explication (1 à 2 phrases max) qui justifie la bonne réponse en s'appuyant sur le contenu du document.
+
+${level}
+
+Réponds UNIQUEMENT en JSON valide avec ce format : {"questions": [{"question": "...", "options": ["A) ...", "B) ...", "C) ...", "D) ..."], "answer": "A", "explanation": "..."}]}`;
 }
 
 // Claude (primary) — streaming to keep the HTTP connection alive
 // `source` is either { type: 'pdf', base64 } or { type: 'text', text }
-async function generateWithClaude(source, numQuestions, onProgress) {
-  const prompt = getQuizPrompt(numQuestions);
+async function generateWithClaude(source, numQuestions, difficulty, onProgress) {
+  const prompt = getQuizPrompt(numQuestions, difficulty);
   const anthropic = new Anthropic();
 
   const userContent = source.type === 'pdf'
@@ -72,8 +83,8 @@ async function generateWithClaude(source, numQuestions, onProgress) {
 }
 
 // Gemini (fallback)
-async function generateWithGemini(source, numQuestions) {
-  const prompt = getQuizPrompt(numQuestions);
+async function generateWithGemini(source, numQuestions, difficulty) {
+  const prompt = getQuizPrompt(numQuestions, difficulty);
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
@@ -120,6 +131,7 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
 
   try {
     const numQuestions = parseInt(req.body.numQuestions) || 10;
+    const difficulty = req.body.difficulty || 'moyen';
     const textPayload = req.body.text;
 
     // Build source: prefer extracted text (fast path), fall back to PDF binary
@@ -136,17 +148,17 @@ app.post('/api/upload-pdf', upload.single('pdf'), async (req, res) => {
     }
 
     let responseText;
-    send({ type: 'progress', message: `Génération du quiz (${numQuestions} questions)...` });
+    send({ type: 'progress', message: `Génération du quiz (${numQuestions} questions, niveau ${difficulty})...` });
 
     try {
       console.log('Trying Claude (primary)...');
-      responseText = await generateWithClaude(source, numQuestions, () => {});
+      responseText = await generateWithClaude(source, numQuestions, difficulty, () => {});
       console.log('Success with Claude');
     } catch (claudeErr) {
       console.warn(`Claude failed: ${claudeErr.message}`);
       console.log('Falling back to Gemini...');
       send({ type: 'progress', message: 'Bascule sur le modèle de secours...' });
-      responseText = await generateWithGemini(source, numQuestions);
+      responseText = await generateWithGemini(source, numQuestions, difficulty);
     }
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -215,6 +227,7 @@ app.post('/api/quiz/:id/submit', (req, res) => {
       userAnswer: answers[i],
       correctAnswer: q.answer,
       isCorrect,
+      explanation: q.explanation || null,
     };
   });
 

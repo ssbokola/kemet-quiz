@@ -5,6 +5,11 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const QUESTION_OPTIONS = [5, 10, 15, 20, 30];
+const DIFFICULTY_OPTIONS = [
+  { value: 'facile', label: 'Facile' },
+  { value: 'moyen', label: 'Moyen' },
+  { value: 'difficile', label: 'Difficile' },
+];
 
 async function extractTextFromPdf(file, onProgress) {
   const arrayBuffer = await file.arrayBuffer();
@@ -24,6 +29,8 @@ function UploadPDF({ onQuizGenerated }) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [numQuestions, setNumQuestions] = useState(10);
+  const [difficulty, setDifficulty] = useState('moyen');
+  const [title, setTitle] = useState('');
   const [progressMsg, setProgressMsg] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef();
@@ -32,6 +39,7 @@ function UploadPDF({ onQuizGenerated }) {
     const file = e.target.files[0];
     if (file) {
       setFileName(file.name);
+      setTitle(file.name.replace(/\.pdf$/i, ''));
       setError('');
     }
   };
@@ -46,6 +54,7 @@ function UploadPDF({ onQuizGenerated }) {
     dt.items.add(file);
     fileRef.current.files = dt.files;
     setFileName(file.name);
+    setTitle(file.name.replace(/\.pdf$/i, ''));
     setError('');
   };
 
@@ -86,7 +95,8 @@ function UploadPDF({ onQuizGenerated }) {
 
       const formData = new FormData();
       formData.append('numQuestions', numQuestions);
-      formData.append('title', file.name.replace(/\.pdf$/i, ''));
+      formData.append('difficulty', difficulty);
+      formData.append('title', (title || file.name.replace(/\.pdf$/i, '')).trim());
 
       if (text && text.length > 200) {
         // Text extraction succeeded — send only the text (fast path)
@@ -174,21 +184,51 @@ function UploadPDF({ onQuizGenerated }) {
         />
 
         {fileName && (
-          <div className="question-count-section">
-            <label className="question-count-label">Nombre de questions :</label>
-            <div className="question-count-options">
-              {QUESTION_OPTIONS.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={`question-count-btn ${numQuestions === n ? 'active' : ''}`}
-                  onClick={() => setNumQuestions(n)}
-                >
-                  {n}
-                </button>
-              ))}
+          <>
+            <div className="quiz-title-section">
+              <label htmlFor="quiz-title" className="question-count-label">Titre du quiz :</label>
+              <input
+                id="quiz-title"
+                type="text"
+                className="quiz-title-input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Titre du quiz (modifiable)"
+              />
             </div>
-          </div>
+
+            <div className="question-count-section">
+              <label className="question-count-label">Nombre de questions :</label>
+              <div className="question-count-options">
+                {QUESTION_OPTIONS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`question-count-btn ${numQuestions === n ? 'active' : ''}`}
+                    onClick={() => setNumQuestions(n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="question-count-section">
+              <label className="question-count-label">Niveau de difficulté :</label>
+              <div className="question-count-options difficulty-options">
+                {DIFFICULTY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`question-count-btn difficulty-btn ${difficulty === opt.value ? 'active' : ''}`}
+                    onClick={() => setDifficulty(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
         )}
 
         <button type="submit" disabled={loading || !fileName} className="btn btn-primary">

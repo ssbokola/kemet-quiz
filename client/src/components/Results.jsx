@@ -126,6 +126,16 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
         y += correctLines.length * 4 + 2;
       }
 
+      if (item.explanation) {
+        doc.setFontSize(9);
+        doc.setTextColor(110, 110, 110);
+        doc.setFont('helvetica', 'italic');
+        const expLines = doc.splitTextToSize(`Explication : ${item.explanation}`, contentWidth - 5);
+        doc.text(expLines, margin + 3, y);
+        y += expLines.length * 4 + 2;
+        doc.setFont('helvetica', 'normal');
+      }
+
       y += 8;
     });
 
@@ -227,6 +237,12 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
               <div className="correct-answer">
                 <p>Votre réponse : <strong>{getOptionText(item.options, item.userAnswer)}</strong></p>
                 <p>Bonne réponse : <strong>{getOptionText(item.options, item.correctAnswer)}</strong></p>
+              </div>
+            )}
+            {item.explanation && (
+              <div className="review-explanation">
+                <span className="explanation-icon">💡</span>
+                <span>{item.explanation}</span>
               </div>
             )}
           </div>

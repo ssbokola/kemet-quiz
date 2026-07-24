@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import UploadPDF from '../components/UploadPDF';
 
 function AdminPage() {
@@ -47,6 +48,13 @@ function AdminPage() {
               <button className={`btn btn-copy ${copied ? 'copied' : ''}`} onClick={handleCopy}>
                 {copied ? '✓ Copié !' : 'Copier'}
               </button>
+            </div>
+
+            <div className="qr-section">
+              <div className="qr-frame">
+                <QRCodeSVG value={quizLink} size={180} bgColor="#ffffff" fgColor="#1a1a2e" level="M" />
+              </div>
+              <p className="qr-label">Scannez pour ouvrir le quiz</p>
             </div>
 
             <div className="action-buttons">
