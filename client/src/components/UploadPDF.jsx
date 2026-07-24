@@ -25,6 +25,7 @@ function UploadPDF({ onQuizGenerated }) {
   const [fileName, setFileName] = useState('');
   const [numQuestions, setNumQuestions] = useState(10);
   const [progressMsg, setProgressMsg] = useState('');
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef();
 
   const handleFileChange = (e) => {
@@ -33,6 +34,36 @@ function UploadPDF({ onQuizGenerated }) {
       setFileName(file.name);
       setError('');
     }
+  };
+
+  const acceptFile = (file) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setError('Seuls les fichiers PDF sont acceptés');
+      return;
+    }
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileRef.current.files = dt.files;
+    setFileName(file.name);
+    setError('');
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    acceptFile(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setDragOver(false);
   };
 
   const handleSubmit = async (e) => {
@@ -120,9 +151,18 @@ function UploadPDF({ onQuizGenerated }) {
   return (
     <div className="upload-section">
       <form onSubmit={handleSubmit} className="upload-form">
-        <label className="file-label" htmlFor="pdf-input">
-          <span className="file-icon">📄</span>
-          <span>{fileName || 'Choisir un support de formation (PDF)'}</span>
+        <label
+          className={`file-label ${dragOver ? 'drag-over' : ''}`}
+          htmlFor="pdf-input"
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <span className="file-icon">{dragOver ? '📥' : '📄'}</span>
+          <span>
+            {fileName || (dragOver ? 'Déposez le PDF ici' : 'Glissez-déposez ou cliquez pour choisir un PDF')}
+          </span>
         </label>
         <input
           id="pdf-input"

@@ -70,6 +70,15 @@
   transform: scale(1.01);
 }
 
+.file-label.drag-over {
+  border-color: #c8a45a;
+  border-style: solid;
+  background: #fdf6e3;
+  transform: scale(1.03);
+  color: #c8a45a;
+  box-shadow: 0 8px 24px rgba(200, 164, 90, 0.25);
+}
+
 .file-icon {
   font-size: 2.5rem;
 }
