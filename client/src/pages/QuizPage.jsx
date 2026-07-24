@@ -1,8 +1,34 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import Welcome from '../components/Welcome';
 import Quiz from '../components/Quiz';
 import Results from '../components/Results';
+
+const storageKey = (id) => `kemet-quiz-progress-${id}`;
+
+function loadProgress(id) {
+  try {
+    const raw = localStorage.getItem(storageKey(id));
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(id, data) {
+  try {
+    localStorage.setItem(storageKey(id), JSON.stringify(data));
+  } catch {}
+}
+
+function clearProgress(id) {
+  try {
+    localStorage.removeItem(storageKey(id));
+  } catch {}
+}
 
 function QuizPage() {
   const { id } = useParams();
@@ -12,9 +38,12 @@ function QuizPage() {
   const [userAnswers, setUserAnswers] = useState({});
   const [resultData, setResultData] = useState(null);
   const [error, setError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [resumed, setResumed] = useState(false);
 
-  // Load quiz on mount
+  // Load quiz + resume progress if any
   useEffect(() => {
     fetch(`/api/quiz/${id}`)
       .then(async (res) => {
@@ -22,7 +51,7 @@ function QuizPage() {
         if (!res.ok) {
           try {
             const err = JSON.parse(text);
-            throw new Error(err.error);
+            throw new Error(err.error || 'Quiz introuvable');
           } catch {
             throw new Error('Quiz introuvable');
           }
@@ -31,6 +60,15 @@ function QuizPage() {
       })
       .then((data) => {
         setQuizData(data);
+
+        const saved = loadProgress(id);
+        if (saved && saved.playerName) {
+          setPlayerName(saved.playerName);
+          setUserAnswers(saved.answers || {});
+          setStep('quiz');
+          setResumed(true);
+        }
+
         setLoading(false);
       })
       .catch((err) => {
@@ -39,12 +77,33 @@ function QuizPage() {
       });
   }, [id]);
 
+  // Persist progress on any change while in quiz step
+  useEffect(() => {
+    if (step === 'quiz' && playerName) {
+      saveProgress(id, {
+        playerName,
+        answers: userAnswers,
+        startedAt: Date.now(),
+      });
+    }
+  }, [id, step, playerName, userAnswers]);
+
   const handleNameSubmit = (name) => {
     setPlayerName(name);
     setStep('quiz');
   };
 
+  const handleRestart = () => {
+    clearProgress(id);
+    setUserAnswers({});
+    setPlayerName('');
+    setResumed(false);
+    setStep('welcome');
+  };
+
   const handleQuizSubmit = async () => {
+    setSubmitting(true);
+    setSubmitError('');
     try {
       const res = await fetch(`/api/quiz/${id}/submit`, {
         method: 'POST',
@@ -53,19 +112,30 @@ function QuizPage() {
       });
       const text = await res.text();
       if (!res.ok) {
+        let msg = 'Erreur lors de la soumission';
         try {
           const err = JSON.parse(text);
-          throw new Error(err.error);
-        } catch {
-          throw new Error('Erreur lors de la soumission');
-        }
+          msg = err.error || msg;
+        } catch {}
+        throw new Error(msg);
       }
       const data = JSON.parse(text);
+      clearProgress(id);
       setResultData(data);
       setStep('results');
     } catch (err) {
-      setError(err.message);
+      setSubmitError(err.message || 'Erreur réseau, réessayez');
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const handleRetake = () => {
+    clearProgress(id);
+    setUserAnswers({});
+    setResultData(null);
+    setSubmitError('');
+    setStep('quiz');
   };
 
   if (loading) {
@@ -78,7 +148,15 @@ function QuizPage() {
   }
 
   if (error) {
-    return <p className="error-msg">{error}</p>;
+    return (
+      <div className="quiz-not-found">
+        <div className="not-found-icon">🔍</div>
+        <h2>Quiz introuvable</h2>
+        <p>Ce lien est peut-être expiré ou incorrect.</p>
+        <p className="subtle">Contactez la personne qui vous l'a envoyé.</p>
+        <Link to="/" className="btn btn-primary">Retour à l'accueil</Link>
+      </div>
+    );
   }
 
   return (
@@ -88,14 +166,25 @@ function QuizPage() {
       )}
 
       {step === 'quiz' && (
-        <Quiz
-          questions={quizData.questions}
-          userAnswers={userAnswers}
-          onAnswer={(idx, answer) =>
-            setUserAnswers((prev) => ({ ...prev, [idx]: answer }))
-          }
-          onSubmit={handleQuizSubmit}
-        />
+        <>
+          {resumed && (
+            <div className="resume-banner">
+              <span>Reprise de votre quiz, {playerName}</span>
+              <button onClick={handleRestart} className="link-btn">Recommencer</button>
+            </div>
+          )}
+          <Quiz
+            questions={quizData.questions}
+            userAnswers={userAnswers}
+            onAnswer={(idx, answer) =>
+              setUserAnswers((prev) => ({ ...prev, [idx]: answer }))
+            }
+            onSubmit={handleQuizSubmit}
+            submitting={submitting}
+            submitError={submitError}
+            onClearSubmitError={() => setSubmitError('')}
+          />
+        </>
       )}
 
       {step === 'results' && resultData && (
@@ -105,6 +194,7 @@ function QuizPage() {
           score={resultData.score}
           total={resultData.total}
           correction={resultData.correction}
+          onRetake={handleRetake}
         />
       )}
     </div>

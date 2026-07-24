@@ -1,7 +1,34 @@
+import { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 
-function Results({ playerName, title, score, total, correction }) {
+const CONFETTI_COLORS = ['#c8a45a', '#d4b86a', '#1a1a2e', '#16a34a', '#f0e8d4'];
+
+function Results({ playerName, title, score, total, correction, onRetake }) {
   const percentage = Math.round((score / total) * 100);
+  const [displayScore, setDisplayScore] = useState(0);
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  useEffect(() => {
+    let raf;
+    const duration = 1000;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplayScore(Math.round(score * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [score]);
+
+  useEffect(() => {
+    if (percentage >= 80) {
+      setShowConfetti(true);
+      const timer = setTimeout(() => setShowConfetti(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [percentage]);
 
   const getGrade = () => {
     if (percentage >= 80) return { label: 'Excellent !', color: '#16a34a' };
@@ -143,11 +170,28 @@ function Results({ playerName, title, score, total, correction }) {
 
   return (
     <div className="results-section">
+      {showConfetti && (
+        <div className="confetti-container" aria-hidden="true">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <span
+              key={i}
+              className="confetti-piece"
+              style={{
+                left: `${(i * 4.2) % 100}%`,
+                background: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+                animationDelay: `${(i % 8) * 0.15}s`,
+                animationDuration: `${2 + (i % 5) * 0.3}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="score-card" style={{ borderColor: grade.color }}>
         <p className="player-name">{playerName}</p>
         <h2 style={{ color: grade.color }}>{grade.label}</h2>
         <div className="score-circle" style={{ borderColor: grade.color }}>
-          <span className="score-number">{score}</span>
+          <span className="score-number">{displayScore}</span>
           <span className="score-total">/ {total}</span>
         </div>
         <p className="score-percent">{percentage}%</p>
@@ -161,6 +205,12 @@ function Results({ playerName, title, score, total, correction }) {
           💬 Partager sur WhatsApp
         </button>
       </div>
+
+      {onRetake && (
+        <button className="btn btn-retake" onClick={onRetake}>
+          🔄 Refaire le quiz
+        </button>
+      )}
 
       <div className="review">
         <h3>Correction</h3>

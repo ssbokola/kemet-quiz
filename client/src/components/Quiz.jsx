@@ -1,17 +1,35 @@
 import { useState } from 'react';
 
-function Quiz({ questions, userAnswers, onAnswer, onSubmit }) {
+function Quiz({
+  questions,
+  userAnswers,
+  onAnswer,
+  onSubmit,
+  submitting,
+  submitError,
+  onClearSubmitError,
+}) {
   const [current, setCurrent] = useState(0);
+  const [showConfirm, setShowConfirm] = useState(false);
   const answered = Object.keys(userAnswers).length;
   const allAnswered = answered === questions.length;
   const q = questions[current];
 
   const handleAnswer = (letter) => {
     onAnswer(current, letter);
-    // Auto-advance after a short delay
     if (current < questions.length - 1) {
       setTimeout(() => setCurrent(current + 1), 400);
     }
+  };
+
+  const openConfirm = () => {
+    onClearSubmitError && onClearSubmitError();
+    setShowConfirm(true);
+  };
+
+  const closeConfirm = () => {
+    if (submitting) return;
+    setShowConfirm(false);
   };
 
   return (
@@ -45,7 +63,7 @@ function Quiz({ questions, userAnswers, onAnswer, onSubmit }) {
       </div>
 
       {/* Single question card */}
-      <div className="question-card active-card" key={current}>
+      <div className="question-card active-card" key={current} aria-live="polite">
         <h3 className="question-number">Question {current + 1} / {questions.length}</h3>
         <p className="question-text">{q.question}</p>
         <div className="options">
@@ -87,12 +105,52 @@ function Quiz({ questions, userAnswers, onAnswer, onSubmit }) {
           <button
             className="btn btn-primary btn-submit"
             disabled={!allAnswered}
-            onClick={onSubmit}
+            onClick={openConfirm}
           >
             Valider ({answered}/{questions.length})
           </button>
         )}
       </div>
+
+      {/* Confirmation modal */}
+      {showConfirm && (
+        <div className="modal-backdrop" onClick={closeConfirm}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h3>Envoyer vos réponses ?</h3>
+            <p>
+              Vous avez répondu à <strong>{answered}/{questions.length}</strong> questions.
+              Une fois envoyées, vous ne pourrez plus les modifier.
+            </p>
+
+            {submitError && (
+              <div className="modal-error">{submitError}</div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-nav"
+                onClick={closeConfirm}
+                disabled={submitting}
+              >
+                Retour
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={onSubmit}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <span className="btn-spinner" /> Envoi en cours...
+                  </>
+                ) : (
+                  'Envoyer mes réponses'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
