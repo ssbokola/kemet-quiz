@@ -1,16 +1,121 @@
-* {
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Instrument+Serif:ital@0;1&display=swap');
+
+/* ============================================================
+   Kemet Quiz — design tokens
+   ============================================================ */
+:root {
+  /* Or Kemet — couleur d'action et de progression */
+  --gold: #c8a45a;
+  --gold-hover: #b8933f;
+  --gold-deep: #7a6528;
+  --gold-soft: #f6eedc;
+  --gold-border: #e4d5ac;
+  --gold-light: #f1d89a;
+
+  /* Encre — titres, boutons de confirmation, écran de quiz */
+  --ink: #1f1d24;
+  --ink-deep: #17161a;
+  --ink-line: #2b2930;
+
+  /* Neutres chauds */
+  --paper: #fbfaf8;
+  --paper-2: #f2efe8;
+  --paper-3: #edeae4;
+  --line: #e7e2d8;
+  --line-strong: #e0dacf;
+  --text: #1f1d24;
+  --text-2: #4f4a41;
+  --text-3: #6b6459;
+  --text-4: #78716a;
+
+  /* États */
+  --ok: #2e7d5b;
+  --ok-bg: #e4f1ea;
+  --ok-text: #1b5b41;
+  --err: #c0453b;
+  --err-bg: #fae7e5;
+  --err-text: #8e332b;
+  --wa: #1f7a4c;
+
+  /* Formes */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+
+  --sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
+  --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shadow-card: 0 1px 2px rgba(31, 29, 36, 0.04);
+  --shadow-pop: 0 18px 44px -28px rgba(31, 29, 36, 0.35);
+  --shadow-gold: 0 12px 26px -14px rgba(200, 164, 90, 0.95);
+}
+
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: #f8f6f4;
-  color: #1a1a2e;
+  font-family: var(--sans);
+  background: var(--paper-3);
+  color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thème encre — appliqué pendant la passation du quiz */
+body.theme-ink {
+  background: var(--ink-deep);
 }
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+a {
+  color: var(--gold-deep);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(154, 122, 46, 0.35);
+}
+
+a:hover {
+  color: #6e5518;
+  border-bottom-color: #6e5518;
+}
+
+input,
+button,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

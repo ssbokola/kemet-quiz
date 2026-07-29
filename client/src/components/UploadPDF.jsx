@@ -1,15 +1,32 @@
 import { useState, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import Icon from './Icon';
+import { adminFetch } from '../api';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const QUESTION_OPTIONS = [5, 10, 15, 20, 30];
 const DIFFICULTY_OPTIONS = [
-  { value: 'facile', label: 'Facile' },
-  { value: 'moyen', label: 'Moyen' },
-  { value: 'difficile', label: 'Difficile' },
+  { value: 'facile', label: 'Facile', desc: 'restitution directe' },
+  { value: 'moyen', label: 'Moyen', desc: 'compréhension' },
+  { value: 'difficile', label: 'Difficile', desc: "cas d'application" },
 ];
+
+const EXPIRY_OPTIONS = [
+  { value: 0, label: 'Sans limite' },
+  { value: 24, label: '24 h' },
+  { value: 168, label: '7 jours' },
+];
+
+const MINUTES_PER_QUESTION = 0.5;
+
+function formatSize(bytes) {
+  if (!bytes) return '';
+  const mo = bytes / (1024 * 1024);
+  if (mo >= 1) return `${mo.toFixed(1).replace('.', ',')} Mo`;
+  return `${Math.round(bytes / 1024)} Ko`;
+}
 
 async function extractTextFromPdf(file, onProgress) {
   const arrayBuffer = await file.arrayBuffer();
@@ -21,233 +38,386 @@ async function extractTextFromPdf(file, onProgress) {
     const content = await page.getTextContent();
     text += content.items.map((item) => item.str).join(' ') + '\n\n';
   }
-  return text.trim();
+  return { text: text.trim(), pages: pdf.numPages };
 }
 
 function UploadPDF({ onQuizGenerated }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [fileName, setFileName] = useState('');
+  const [file, setFile] = useState(null);
+  const [pageCount, setPageCount] = useState(null);
+  const [title, setTitle] = useState('');
   const [numQuestions, setNumQuestions] = useState(10);
   const [difficulty, setDifficulty] = useState('moyen');
-  const [title, setTitle] = useState('');
-  const [progressMsg, setProgressMsg] = useState('');
+  const [singleAttempt, setSingleAttempt] = useState(true);
+  const [expiresInHours, setExpiresInHours] = useState(0);
   const [dragOver, setDragOver] = useState(false);
-  const fileRef = useRef();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  // 'read' → 'write' → 'verify'
+  const [stage, setStage] = useState('read');
+  const [readProgress, setReadProgress] = useState(null);
+  const inputRef = useRef();
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFileName(file.name);
-      setTitle(file.name.replace(/\.pdf$/i, ''));
-      setError('');
-    }
-  };
-
-  const acceptFile = (file) => {
-    if (!file) return;
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Seuls les fichiers PDF sont acceptés');
+  const acceptFile = (candidate) => {
+    if (!candidate) return;
+    const isPdf =
+      candidate.type === 'application/pdf' || candidate.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      setError('Ce format n’est pas géré. Déposez un fichier PDF.');
       return;
     }
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    fileRef.current.files = dt.files;
-    setFileName(file.name);
-    setTitle(file.name.replace(/\.pdf$/i, ''));
+    setFile(candidate);
+    setPageCount(null);
+    setTitle(candidate.name.replace(/\.pdf$/i, ''));
     setError('');
+  };
+
+  const clearFile = () => {
+    setFile(null);
+    setPageCount(null);
+    setTitle('');
+    setError('');
+    if (inputRef.current) inputRef.current.value = '';
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    acceptFile(file);
+    acceptFile(e.dataTransfer.files?.[0]);
   };
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setDragOver(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-  };
+  const estMinutes = Math.max(2, Math.round(numQuestions * MINUTES_PER_QUESTION));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const file = fileRef.current.files[0];
     if (!file) {
-      setError('Veuillez sélectionner un fichier PDF');
+      setError('Choisissez d’abord un PDF.');
       return;
     }
 
     setLoading(true);
     setError('');
+    setStage('read');
+    setReadProgress(null);
 
     try {
-      // Step 1: extract text in the browser
-      setProgressMsg('Lecture du PDF...');
-      const text = await extractTextFromPdf(file, (cur, total) => {
-        setProgressMsg(`Lecture du PDF (page ${cur}/${total})...`);
+      const { text, pages } = await extractTextFromPdf(file, (cur, total) => {
+        setReadProgress({ cur, total });
       });
+      setPageCount(pages);
 
       const formData = new FormData();
       formData.append('numQuestions', numQuestions);
       formData.append('difficulty', difficulty);
       formData.append('title', (title || file.name.replace(/\.pdf$/i, '')).trim());
+      formData.append('singleAttempt', singleAttempt ? 'true' : 'false');
+      formData.append('expiresInHours', String(expiresInHours));
 
       if (text && text.length > 200) {
-        // Text extraction succeeded — send only the text (fast path)
         formData.append('text', text);
-        setProgressMsg('Envoi du texte au modèle...');
       } else {
-        // Likely a scanned PDF — fall back to sending the binary
+        // PDF scanné : on envoie le binaire, le modèle lit l'image
         formData.append('pdf', file);
-        setProgressMsg('PDF scanné détecté — envoi du document complet...');
       }
 
-      const res = await fetch('/api/upload-pdf', {
-        method: 'POST',
-        body: formData,
-      });
+      setStage('write');
 
-      if (!res.ok) {
-        throw new Error(`Erreur serveur (${res.status})`);
+      const res = await adminFetch('/api/upload-pdf', { method: 'POST', body: formData });
+      if (res.status === 401) {
+        throw new Error('Session expirée : rechargez la page et saisissez le mot de passe.');
       }
+      if (!res.ok) throw new Error(`Le serveur a répondu une erreur (${res.status}).`);
 
-      // Read NDJSON stream
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let done = false;
       let result = null;
+      let done = false;
 
       while (!done) {
         const { value, done: streamDone } = await reader.read();
         if (streamDone) break;
         buffer += decoder.decode(value, { stream: true });
-
         const lines = buffer.split('\n');
         buffer = lines.pop();
 
         for (const line of lines) {
           if (!line.trim()) continue;
           let msg;
-          try { msg = JSON.parse(line); } catch { continue; }
-
-          if (msg.type === 'progress' && msg.message) {
-            setProgressMsg(msg.message);
-          } else if (msg.type === 'done') {
+          try {
+            msg = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (msg.type === 'done') {
             result = msg;
             done = true;
           } else if (msg.type === 'error') {
             throw new Error(msg.error || 'Erreur inconnue');
+          } else if (msg.type === 'progress') {
+            setStage('write');
           }
         }
       }
 
-      if (!result) throw new Error('Réponse du serveur incomplète');
+      if (!result) throw new Error('Réponse du serveur incomplète, réessayez.');
+      setStage('verify');
       onQuizGenerated(result);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
-      setProgressMsg('');
     }
   };
 
+  if (loading) {
+    const pct = stage === 'read' ? (readProgress ? Math.round((readProgress.cur / readProgress.total) * 25) : 5) : stage === 'write' ? 70 : 95;
+    return (
+      <div className="progress-screen">
+        <div className="progress-head">
+          <div className="spinner" />
+          <h2>Fabrication du quiz</h2>
+          <p>Laissez cet onglet ouvert, comptez environ une minute.</p>
+        </div>
+
+        <div className="steps">
+          <div className={`step ${stage === 'read' ? 'is-doing' : 'is-done'}`}>
+            {stage === 'read' ? (
+              <span className="spinner spinner--sm" />
+            ) : (
+              <span className="step-bullet">
+                <Icon name="check" size={13} width={2.4} />
+              </span>
+            )}
+            <span className="step-name">Lecture du document</span>
+            <span className="step-meta">
+              {readProgress ? `${readProgress.cur} / ${readProgress.total} pages` : ''}
+            </span>
+          </div>
+
+          <div
+            className={`step ${
+              stage === 'write' ? 'is-doing' : stage === 'verify' ? 'is-done' : 'is-todo'
+            }`}
+          >
+            {stage === 'write' ? (
+              <span className="spinner spinner--sm" />
+            ) : stage === 'verify' ? (
+              <span className="step-bullet">
+                <Icon name="check" size={13} width={2.4} />
+              </span>
+            ) : (
+              <span className="step-bullet" />
+            )}
+            <span className="step-name">Rédaction des questions</span>
+            <span className="step-meta">{numQuestions} attendues</span>
+          </div>
+
+          <div className={`step ${stage === 'verify' ? 'is-doing' : 'is-todo'}`}>
+            {stage === 'verify' ? (
+              <span className="spinner spinner--sm" />
+            ) : (
+              <span className="step-bullet" />
+            )}
+            <span className="step-name">Vérification des réponses</span>
+          </div>
+        </div>
+
+        <div>
+          <div className="bar">
+            <div className="bar-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="bar-legend">
+            <span>{pct} %</span>
+            <span>ne fermez pas la page</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="upload-section">
-      <form onSubmit={handleSubmit} className="upload-form">
+    <form onSubmit={handleSubmit} className="stack">
+      <div className="page-head">
+        <h1>Créer un quiz</h1>
+        <p>Déposez un document, l’IA en tire des questions à choix multiple.</p>
+      </div>
+
+      {!file ? (
         <label
-          className={`file-label ${dragOver ? 'drag-over' : ''}`}
+          className={`dropzone ${dragOver ? 'is-over' : ''}`}
           htmlFor="pdf-input"
           onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragEnter={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragEnter={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+          }}
         >
-          <span className="file-icon">{dragOver ? '📥' : '📄'}</span>
-          <span>
-            {fileName || (dragOver ? 'Déposez le PDF ici' : 'Glissez-déposez ou cliquez pour choisir un PDF')}
+          <Icon name="doc" size={34} stroke="var(--gold)" width={1.4} />
+          <span className="dropzone-title">Glissez un PDF ici</span>
+          <span className="dropzone-alt">
+            ou <b>parcourez vos fichiers</b>
           </span>
+          <span className="dropzone-meta">PDF texte ou scanné · 20 Mo max</span>
         </label>
-        <input
-          id="pdf-input"
-          type="file"
-          accept=".pdf"
-          ref={fileRef}
-          onChange={handleFileChange}
-          className="file-input"
-        />
-
-        {fileName && (
-          <>
-            <div className="quiz-title-section">
-              <label htmlFor="quiz-title" className="question-count-label">Titre du quiz :</label>
-              <input
-                id="quiz-title"
-                type="text"
-                className="quiz-title-input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Titre du quiz (modifiable)"
-              />
-            </div>
-
-            <div className="question-count-section">
-              <label className="question-count-label">Nombre de questions :</label>
-              <div className="question-count-options">
-                {QUESTION_OPTIONS.map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    className={`question-count-btn ${numQuestions === n ? 'active' : ''}`}
-                    onClick={() => setNumQuestions(n)}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="question-count-section">
-              <label className="question-count-label">Niveau de difficulté :</label>
-              <div className="question-count-options difficulty-options">
-                {DIFFICULTY_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`question-count-btn difficulty-btn ${difficulty === opt.value ? 'active' : ''}`}
-                    onClick={() => setDifficulty(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        <button type="submit" disabled={loading || !fileName} className="btn btn-primary">
-          {loading ? 'Generation du quiz...' : `Generer ${numQuestions} questions`}
-        </button>
-      </form>
-
-      {loading && (
-        <div className="loader">
-          <div className="spinner" />
-          <p>{progressMsg || 'Analyse du PDF en cours...'}</p>
-          <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '8px' }}>
-            Cela peut prendre 30 secondes à 1 minute.
-          </p>
+      ) : (
+        <div className="file-chip">
+          <Icon name="doc" size={20} stroke="var(--gold-deep)" width={1.5} />
+          <span className="file-chip-body">
+            <span className="file-chip-name">{file.name}</span>
+            <span className="file-chip-meta">
+              {pageCount ? `${pageCount} pages · ` : ''}
+              {formatSize(file.size)}
+            </span>
+          </span>
+          <button
+            type="button"
+            className="file-chip-remove"
+            onClick={clearFile}
+            aria-label="Retirer le fichier"
+          >
+            <Icon name="close" size={13} width={2} />
+          </button>
         </div>
       )}
 
-      {error && <p className="error-msg">{error}</p>}
-    </div>
+      <input
+        id="pdf-input"
+        ref={inputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        className="file-input"
+        onChange={(e) => acceptFile(e.target.files[0])}
+      />
+
+      {file && (
+        <>
+          <div className="field">
+            <label className="field-label" htmlFor="quiz-title">
+              Titre du quiz
+            </label>
+            <input
+              id="quiz-title"
+              type="text"
+              className="input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex. Procédure caisse"
+            />
+          </div>
+
+          <div className="field">
+            <div className="field-row">
+              <span className="field-label">Nombre de questions</span>
+              <span className="dropzone-meta">≈ {estMinutes} min</span>
+            </div>
+            <div className="segments">
+              {QUESTION_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`segment ${numQuestions === n ? 'is-active' : ''}`}
+                  aria-pressed={numQuestions === n}
+                  onClick={() => setNumQuestions(n)}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Niveau</span>
+            <div className="choices">
+              {DIFFICULTY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`choice ${difficulty === opt.value ? 'is-active' : ''}`}
+                  aria-pressed={difficulty === opt.value}
+                  onClick={() => setDifficulty(opt.value)}
+                >
+                  <span className="choice-dot" />
+                  <span className="choice-label">{opt.label}</span>
+                  <span className="choice-desc">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Diffusion</span>
+            <div className="choices">
+              <button
+                type="button"
+                className={`choice ${singleAttempt ? 'is-active' : ''}`}
+                aria-pressed={singleAttempt}
+                onClick={() => setSingleAttempt(true)}
+              >
+                <span className="choice-dot" />
+                <span className="choice-label">1 tentative</span>
+                <span className="choice-desc">un score par participant</span>
+              </button>
+              <button
+                type="button"
+                className={`choice ${!singleAttempt ? 'is-active' : ''}`}
+                aria-pressed={!singleAttempt}
+                onClick={() => setSingleAttempt(false)}
+              >
+                <span className="choice-dot" />
+                <span className="choice-label">Libre</span>
+                <span className="choice-desc">entraînement, rejouable</span>
+              </button>
+            </div>
+            <div className="segments segments--3" style={{ marginTop: 4 }}>
+              {EXPIRY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`segment segment--text ${
+                    expiresInHours === opt.value ? 'is-active' : ''
+                  }`}
+                  aria-pressed={expiresInHours === opt.value}
+                  onClick={() => setExpiresInHours(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <span className="dropzone-meta">
+              Passé ce délai le lien ne fonctionne plus. Vous pourrez aussi fermer le quiz à la
+              main.
+            </span>
+          </div>
+        </>
+      )}
+
+      {error && (
+        <p className="error-msg">
+          <Icon name="info" size={16} width={1.8} />
+          <span>{error}</span>
+        </p>
+      )}
+
+      <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
+        <button type="submit" className="btn btn--primary btn--block" disabled={!file}>
+          Générer {numQuestions} questions
+          <Icon name="arrowRight" size={18} width={1.8} />
+        </button>
+        <span className="btn-hint">
+          {file
+            ? 'Vous pourrez relire et corriger avant de partager'
+            : 'Choisissez un PDF pour continuer'}
+        </span>
+      </div>
+    </form>
   );
 }
 

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import Welcome from '../components/Welcome';
 import Quiz from '../components/Quiz';
 import Results from '../components/Results';
+import AppBar from '../components/AppBar';
+import Icon from '../components/Icon';
 
 const storageKey = (id) => `kemet-quiz-progress-${id}`;
 
@@ -11,8 +13,7 @@ function loadProgress(id) {
     const raw = localStorage.getItem(storageKey(id));
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (!data || typeof data !== 'object') return null;
-    return data;
+    return data && typeof data === 'object' ? data : null;
   } catch {
     return null;
   }
@@ -38,29 +39,29 @@ function QuizPage() {
   const [userAnswers, setUserAnswers] = useState({});
   const [resultData, setResultData] = useState(null);
   const [error, setError] = useState('');
+  const [errorKind, setErrorKind] = useState('notfound'); // notfound | closed
+  const [already, setAlready] = useState(null);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [resumed, setResumed] = useState(false);
 
-  // Load quiz + resume progress if any
   useEffect(() => {
     fetch(`/api/quiz/${id}`)
       .then(async (res) => {
         const text = await res.text();
         if (!res.ok) {
+          let msg = res.status === 410 ? 'Ce quiz est fermé' : 'Quiz introuvable';
           try {
-            const err = JSON.parse(text);
-            throw new Error(err.error || 'Quiz introuvable');
-          } catch {
-            throw new Error('Quiz introuvable');
-          }
+            msg = JSON.parse(text).error || msg;
+          } catch {}
+          setErrorKind(res.status === 410 ? 'closed' : 'notfound');
+          throw new Error(msg);
         }
         return JSON.parse(text);
       })
       .then((data) => {
         setQuizData(data);
-
         const saved = loadProgress(id);
         if (saved && saved.playerName) {
           setPlayerName(saved.playerName);
@@ -68,7 +69,6 @@ function QuizPage() {
           setStep('quiz');
           setResumed(true);
         }
-
         setLoading(false);
       })
       .catch((err) => {
@@ -77,21 +77,11 @@ function QuizPage() {
       });
   }, [id]);
 
-  // Persist progress on any change while in quiz step
   useEffect(() => {
     if (step === 'quiz' && playerName) {
-      saveProgress(id, {
-        playerName,
-        answers: userAnswers,
-        startedAt: Date.now(),
-      });
+      saveProgress(id, { playerName, answers: userAnswers, startedAt: Date.now() });
     }
   }, [id, step, playerName, userAnswers]);
-
-  const handleNameSubmit = (name) => {
-    setPlayerName(name);
-    setStep('quiz');
-  };
 
   const handleRestart = () => {
     clearProgress(id);
@@ -112,19 +102,29 @@ function QuizPage() {
       });
       const text = await res.text();
       if (!res.ok) {
-        let msg = 'Erreur lors de la soumission';
+        let payload = {};
         try {
-          const err = JSON.parse(text);
-          msg = err.error || msg;
+          payload = JSON.parse(text);
         } catch {}
-        throw new Error(msg);
+
+        if (res.status === 409 && payload.alreadyAnswered) {
+          clearProgress(id);
+          setAlready(payload);
+          return;
+        }
+
+        throw new Error(
+          (payload.error || 'Envoi impossible') +
+            ' Vos réponses restent enregistrées sur cet appareil : réessayez.'
+        );
       }
-      const data = JSON.parse(text);
       clearProgress(id);
-      setResultData(data);
+      setResultData(JSON.parse(text));
       setStep('results');
     } catch (err) {
-      setSubmitError(err.message || 'Erreur réseau, réessayez');
+      setSubmitError(
+        err.message || 'Réseau indisponible. Vos réponses sont conservées, réessayez.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -135,68 +135,108 @@ function QuizPage() {
     setUserAnswers({});
     setResultData(null);
     setSubmitError('');
+    setResumed(false);
     setStep('quiz');
   };
 
   if (loading) {
     return (
-      <div className="loader">
-        <div className="spinner" />
-        <p>Chargement du quiz...</p>
+      <div className="app">
+        <AppBar />
+        <div className="loading-screen">
+          <div className="spinner" />
+          <p>Chargement du quiz…</p>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="quiz-not-found">
-        <div className="not-found-icon">🔍</div>
-        <h2>Quiz introuvable</h2>
-        <p>Ce lien est peut-être expiré ou incorrect.</p>
-        <p className="subtle">Contactez la personne qui vous l'a envoyé.</p>
-        <Link to="/" className="btn btn-primary">Retour à l'accueil</Link>
+      <div className="app">
+        <AppBar />
+        <div className="empty-state">
+          <span className="empty-state-icon">
+            <Icon name={errorKind === 'closed' ? 'close' : 'search'} size={22} width={1.7} />
+          </span>
+          <h2>{errorKind === 'closed' ? 'Quiz clôturé' : 'Quiz introuvable'}</h2>
+          <p>
+            {errorKind === 'closed'
+              ? `${error}. Contactez votre formateur si vous devez encore y répondre.`
+              : 'Ce lien est peut-être expiré ou incorrect. Contactez la personne qui vous l’a envoyé.'}
+          </p>
+        </div>
       </div>
     );
   }
 
-  return (
-    <div>
-      {step === 'welcome' && (
-        <Welcome quizTitle={quizData.title} onSubmit={handleNameSubmit} />
-      )}
-
-      {step === 'quiz' && (
-        <>
-          {resumed && (
-            <div className="resume-banner">
-              <span>Reprise de votre quiz, {playerName}</span>
-              <button onClick={handleRestart} className="link-btn">Recommencer</button>
-            </div>
+  if (already) {
+    return (
+      <div className="app">
+        <AppBar />
+        <div className="empty-state">
+          <span className="empty-state-icon">
+            <Icon name="check" size={22} width={2} />
+          </span>
+          <h2>Déjà répondu</h2>
+          <p>{already.error}</p>
+          {already.score != null && (
+            <span className="tag" style={{ marginTop: 4 }}>
+              Score enregistré : {already.score}/{already.total}
+            </span>
           )}
-          <Quiz
-            questions={quizData.questions}
-            userAnswers={userAnswers}
-            onAnswer={(idx, answer) =>
-              setUserAnswers((prev) => ({ ...prev, [idx]: answer }))
-            }
-            onSubmit={handleQuizSubmit}
-            submitting={submitting}
-            submitError={submitError}
-            onClearSubmitError={() => setSubmitError('')}
-          />
-        </>
-      )}
+        </div>
+      </div>
+    );
+  }
 
-      {step === 'results' && resultData && (
+  if (step === 'quiz') {
+    return (
+      <Quiz
+        quizTitle={quizData.title}
+        questions={quizData.questions}
+        userAnswers={userAnswers}
+        onAnswer={(idx, answer) => setUserAnswers((prev) => ({ ...prev, [idx]: answer }))}
+        onSubmit={handleQuizSubmit}
+        submitting={submitting}
+        submitError={submitError}
+        onClearSubmitError={() => setSubmitError('')}
+        resumed={resumed}
+        onRestart={handleRestart}
+      />
+    );
+  }
+
+  if (step === 'results' && resultData) {
+    return (
+      <div className="app">
+        <AppBar />
         <Results
           playerName={resultData.playerName}
           title={resultData.title}
           score={resultData.score}
           total={resultData.total}
           correction={resultData.correction}
-          onRetake={handleRetake}
+          onRetake={quizData.singleAttempt === false ? handleRetake : null}
         />
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <AppBar />
+      <main className="app-main">
+        <Welcome
+          quizTitle={quizData.title}
+          questionCount={quizData.questions.length}
+          singleAttempt={quizData.singleAttempt !== false}
+          onSubmit={(name) => {
+            setPlayerName(name);
+            setStep('quiz');
+          }}
+        />
+      </main>
     </div>
   );
 }
