@@ -59,6 +59,13 @@ const upload = multer({
   },
 });
 
+// Modèle Claude, en un seul endroit. `claude-sonnet-4-20250514` ne répondait plus
+// (404 not_found_error) et TOUS les quiz partaient donc en silence chez Gemini,
+// le repli masquant la panne. Voir HANDOFF.md §5.
+const MODEL = 'claude-sonnet-5';
+// Profondeur de raisonnement : « medium » est l'équilibre coût / qualité.
+const EFFORT = 'medium';
+
 const DIFFICULTY_GUIDANCE = {
   facile: "Niveau FACILE : les questions doivent être basiques et rappeler des faits explicitement présents dans le document. Distracteurs franchement différents de la bonne réponse.",
   moyen: "Niveau MOYEN : mélange équilibré de questions factuelles et de questions de compréhension nécessitant de relier plusieurs éléments du document. Distracteurs plausibles mais discernables.",
@@ -90,8 +97,13 @@ async function generateWithClaude(source, numQuestions, difficulty, onProgress) 
       ];
 
   const stream = anthropic.messages.stream({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: numQuestions > 15 ? 8192 : 4096,
+    model: MODEL,
+    // Le raisonnement est actif par défaut sur ce modèle et consomme le même
+    // budget que la réponse : d'où des plafonds larges. Ce n'est qu'un plafond,
+    // seuls les tokens réellement produits sont facturés.
+    max_tokens: numQuestions > 15 ? 32000 : 16000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: EFFORT },
     system: prompt,
     messages: [{ role: 'user', content: userContent }],
   });
@@ -406,12 +418,16 @@ app.post('/api/quiz/:id/regenerate/:index', requireAdmin, async (req, res) => {
     try {
       const anthropic = new Anthropic();
       const msg = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
+        model: MODEL,
+        max_tokens: 8192,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: EFFORT },
         system: DIFFICULTY_GUIDANCE[quiz.difficulty] || DIFFICULTY_GUIDANCE.moyen,
         messages: [{ role: 'user', content: [{ type: 'text', text: instruction }] }],
       });
-      text = msg.content.map((c) => c.text || '').join('');
+      // Ne concaténer que les blocs de texte : les blocs de raisonnement
+      // n'ont pas de champ `text` et ne doivent pas polluer le JSON attendu.
+      text = msg.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
     } catch (claudeErr) {
       console.warn(`Claude regenerate failed: ${claudeErr.message} — fallback Gemini`);
       text = await generateWithGemini(

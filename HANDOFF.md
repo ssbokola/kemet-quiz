@@ -303,6 +303,7 @@ Depuis, la vérification se fait avec le **binaire Node de la version exacte de 
 | **Après redémarrage du serveur** | 10 vérifications rejouées | ✅ titre, état, résultats et tentative unique retrouvés |
 | Repli en mode dégradé | stockage rendu volontairement impossible | ✅ serveur debout, cause exacte annoncée |
 | Les trois messages de démarrage | volume OK / volume absent / SQLite indisponible | ✅ chacun dit la vérité |
+| **Correctif du modèle Claude** | vraie génération (4 questions) + régénération d'une question | ✅ `Success with Claude`, 6 s et 3 s, aucune fuite de balise de raisonnement |
 
 **Vérifié en local le 30/07/2026, lors de la première tentative** (serveur sur un port de test, base isolée, quiz injecté directement dans le store pour éviter un appel IA) :
 
@@ -324,9 +325,9 @@ Non rejoué depuis le passage à SQLite : les parcours dans le navigateur. Ils n
 
 **Vérifié en local avant l'intégration UX/UI :** parcours formateur complet (dépôt → réglages → génération → relecture → publication), parcours participant complet (accueil → passation → résultats → correction), régénération d'une question, édition du titre, fermeture d'un quiz (`410`), tentative unique (`409`), reprise après rafraîchissement.
 
-### 🔴 Claude ne génère plus rien — l'identifiant de modèle est mort
+### ✅ Le modèle Claude mort — corrigé le 30/07/2026
 
-Constaté en local le 30/07/2026 en générant un vrai quiz. La clé Anthropic **est valide** : ce n'est pas un `401`.
+Pendant plusieurs semaines, **tous les quiz ont été produits par Gemini** sans que rien ne le signale : le modèle `claude-sonnet-4-20250514` n'était plus servi, et le repli automatique masquait la panne.
 
 ```
 Claude failed: 404 {"type":"not_found_error","message":"model: claude-sonnet-4-20250514"}
@@ -334,11 +335,23 @@ Falling back to Gemini...
 Success with Gemini gemini-2.5-flash
 ```
 
-Le modèle `claude-sonnet-4-20250514`, codé en dur à **deux endroits** (`server/src/index.js`, génération complète et régénération d'une question), n'est plus servi. Conséquence : **tous les quiz sont produits par Gemini**, sans que rien ne le signale à l'écran. Le repli fait son travail — c'est justement ce qui rend la panne invisible.
+La clé Anthropic était valide : un `404 not_found_error` désigne le **modèle**, pas la clé. Le diagnostic de la version précédente de ce document (« `401` → clé mal enregistrée dans Railway ») était faux.
 
-Correctif : remplacer l'identifiant par un modèle courant aux deux endroits. Rien d'autre à changer, l'appel est identique.
+**Ce qui a changé** — l'identifiant vit désormais dans une seule constante en tête de `server/src/index.js` :
 
-> Le diagnostic donné par la version précédente de ce document (« `401` → la clé n'est pas enregistrée dans Railway ») était faux. Un `404 not_found_error` désigne le modèle, pas la clé.
+```js
+const MODEL = 'claude-sonnet-5';
+const EFFORT = 'medium';
+```
+
+Sur ce modèle, le raisonnement est **actif par défaut** et puise dans le même budget que la réponse. Deux conséquences dans le code :
+
+- `max_tokens` a été relevé (16 000, ou 32 000 au-delà de 15 questions ; 8 192 pour la régénération d'une question). Ce n'est qu'un plafond : seuls les tokens réellement produits sont facturés.
+- La régénération ne concatène plus que les blocs de type `text`. Les blocs de raisonnement n'ont pas de champ `text` et pollueraient le JSON attendu.
+
+`EFFORT` règle la profondeur de raisonnement (`low` → `max`). `medium` est l'équilibre coût/qualité ; le monter améliore les distracteurs des questions difficiles, au prix de tokens supplémentaires.
+
+> ⚠️ **Le repli sur Gemini rend toute panne de Claude invisible.** C'est ce qui a laissé passer celle-ci. Après tout changement touchant l'IA, vérifier dans les *Deploy Logs* que la ligne est bien `Success with Claude` et non `Falling back to Gemini`.
 
 ---
 
