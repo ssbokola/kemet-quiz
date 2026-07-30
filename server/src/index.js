@@ -9,7 +9,18 @@ const envPath = path.join(__dirname, '..', '..', '.env');
 try { require('dotenv').config({ path: envPath, override: true }); } catch {};
 
 const cors = require('cors');
-const store = require('./db');
+
+// Si le stockage SQLite refuse de se charger (runtime sans node:sqlite), on
+// bascule sur un store en mémoire plutôt que de laisser mourir le serveur :
+// mieux vaut un site debout sans persistance qu'un site inaccessible.
+let store;
+try {
+  store = require('./db');
+} catch (err) {
+  console.error('SQLite indisponible — bascule en mémoire, données NON persistées.');
+  console.error(`  cause : ${err.message}`);
+  store = require('./db-memory');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -541,8 +552,8 @@ app.listen(PORT, () => {
   console.log(`Base de données : ${store.DB_PATH}`);
   if (store.isEphemeral) {
     console.warn(
-      '⚠️  Aucun volume Railway monté : la base vit dans le conteneur et sera EFFACÉE au prochain déploiement.\n' +
-        '    Attachez un Volume au service (Railway → service → Volumes), puis redéployez.'
+      `⚠️  Données NON persistées : ${store.ephemeralReason}\n` +
+        '    Les quiz et les résultats seront perdus au prochain redémarrage.'
     );
   }
 });

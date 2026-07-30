@@ -15,7 +15,7 @@
   "author": "Kemet Services",
   "license": "ISC",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

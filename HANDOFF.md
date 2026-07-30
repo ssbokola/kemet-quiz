@@ -27,7 +27,7 @@ Un formateur dépose un support de formation en PDF. L'IA en tire un questionnai
 | --- | --- |
 | Front | React 19, Vite 8, react-router-dom 7 |
 | Back | Node.js, Express 5 |
-| Stockage | SQLite (`better-sqlite3`), fichier sur volume Railway |
+| Stockage | SQLite **intégré à Node** (`node:sqlite`), fichier sur volume Railway |
 | IA | Claude (primaire) → Gemini (repli automatique) |
 | PDF entrant | `pdfjs-dist` — extraction **côté navigateur** |
 | PDF sortant | `jspdf` |
@@ -66,7 +66,9 @@ kemet-quizz/
 └── server/
     └── src/
         ├── index.js          API complète (routes, IA, validation)
-        └── db.js             base SQLite : schéma + accès aux quiz et résultats
+        ├── db.js             base SQLite : schéma + accès aux quiz et résultats
+        ├── db-memory.js      même interface, en mémoire — repli si db.js échoue
+        └── name-key.js       normalisation des prénoms, partagée par les deux stores
 ```
 
 ---
@@ -125,7 +127,32 @@ Deux tables :
 | `quizzes` | un quiz par ligne ; les questions sont sérialisées en JSON dans une colonne (elles sont toujours lues et écrites en bloc) |
 | `results` | une ligne par participation, liée au quiz par `ON DELETE CASCADE` |
 
-`better-sqlite3` est **synchrone** : les gestionnaires de routes sont restés synchrones, et un cycle lecture → vérification → écriture (la règle de tentative unique, par exemple) ne peut pas être entrelacé avec une autre requête. Aucune transaction explicite n'est donc nécessaire.
+`node:sqlite` (`DatabaseSync`) est **synchrone** : les gestionnaires de routes sont restés synchrones, et un cycle lecture → vérification → écriture (la règle de tentative unique, par exemple) ne peut pas être entrelacé avec une autre requête. Aucune transaction explicite n'est donc nécessaire.
+
+#### ⛔ Ne pas revenir à `better-sqlite3`
+
+Le premier essai de persistance utilisait `better-sqlite3`. Il a **mis la production à terre** le 30/07/2026 : son binaire natif provoquait un `Segmentation fault` au démarrage sur l'image Nixpacks de Railway. Un segfault n'est pas rattrapable par `try/catch` — le serveur mourait en boucle, sans message exploitable.
+
+`node:sqlite` est livré **dans le binaire Node**. Aucun composant compilé à télécharger, à sélectionner selon la plateforme, ni à lier : la classe de panne est supprimée, pas contournée. Même moteur SQLite, même format de fichier.
+
+**Le prix à payer**, à connaître avant de toucher à `db.js` :
+
+- **`db.pragma()` n'existe pas.** Les pragmas passent par `db.exec('PRAGMA …')`.
+- **`busy_timeout` vaut 0 par défaut** (contre 5 s chez `better-sqlite3`) — d'où le `PRAGMA busy_timeout = 5000` explicite. Ne pas utiliser l'option `{ timeout }` du constructeur : elle n'existe qu'à partir de Node 22.16, le pragma marche dès 22.13.
+- **Un paramètre nommé manquant est lié à `NULL` en silence**, là où `better-sqlite3` levait une erreur. Le code actuel fournit toujours tous ses paramètres, et les `NOT NULL` du schéma servent de second garde-fou — mais c'est le piège à surveiller pour toute évolution.
+- **Les lignes renvoyées ont un prototype nul** : `row.champ` et `JSON.stringify` marchent, `row.hasOwnProperty()` lève. Sans effet ici, `rowToQuiz`/`rowToResult` reconstruisent des objets normaux.
+- **`db.prepare()` n'exécute que la première instruction** d'un SQL multi-instructions, sans erreur. Le schéma passe par `exec()`.
+- Un `ExperimentalWarning: SQLite is an experimental feature` s'affiche à chaque démarrage. **Non bloquant, ne pas s'en alarmer dans les logs Railway.**
+
+**Node ≥ 22.13 est donc obligatoire** — d'où `engines.node` à `>=22.13.0` et le `.nvmrc`. Sur Node 20, `node:sqlite` n'existe pas.
+
+### Le repli en mémoire
+
+`index.js` charge le store dans un `try/catch`. Si `db.js` refuse de se charger, il bascule sur `server/src/db-memory.js`, qui expose exactement la même interface derrière des `Map`.
+
+Conséquence : le pire scénario devient « le site tourne, les données ne survivent pas au redémarrage » au lieu de « le site est inaccessible ». Le démarrage annonce alors la vraie cause, et non un diagnostic générique.
+
+`nameKey()` — la normalisation des prénoms — vit dans `server/src/name-key.js`, partagé par les deux stores : ils doivent trancher identiquement, sans quoi la règle de tentative unique changerait de sens en mode dégradé.
 
 ### Validation de la sortie du modèle
 
@@ -191,10 +218,16 @@ Le logo Kemet est vert, l'interface est or — choix assumé et validé : le ver
 > ⚠️ **Le volume Railway n'est pas optionnel.** Sans volume attaché au service, la base est écrite dans le système de fichiers du conteneur et disparaît à chaque déploiement — exactement le comportement d'avant. Pour éviter que ce soit silencieux, le serveur détecte le cas au démarrage et écrit un avertissement dans les *Deploy Logs* :
 >
 > ```
-> ⚠️  Aucun volume Railway monté : la base vit dans le conteneur et sera EFFACÉE au prochain déploiement.
+> ⚠️  Données NON persistées : aucun volume Railway monté — attachez un Volume au service, puis redéployez
 > ```
 >
-> **À faire une fois** dans Railway : service → onglet *Volumes* → *Add Volume*, puis redéployer. Railway injecte alors `RAILWAY_VOLUME_MOUNT_PATH` tout seul, aucune variable à saisir à la main.
+> Le volume `quiz-data` est en place depuis le 30/07/2026, monté sur `/data`. Railway injecte `RAILWAY_VOLUME_MOUNT_PATH` tout seul, aucune variable à saisir à la main.
+>
+> **Pour le recréer** : la création passe par la palette `Ctrl+K` ou un clic droit sur le canvas du projet — **pas** par un onglet du service. Le changement est d'abord *staged* : il faut ensuite le déployer pour qu'il prenne effet.
+
+### Version de Node
+
+`engines.node` vaut `>=22.13.0` et un `.nvmrc` fige le majeur sur `22`. Ce n'est pas cosmétique : en dessous de 22.13, `node:sqlite` n'existe pas et l'application démarrerait en mode dégradé sans persistance. Railway tourne actuellement sur `node@22.23.1`.
 
 Le `.env` local est dans `.gitignore`.
 
@@ -253,7 +286,25 @@ Les quiz persistent, mais il n'existe aucune route pour les énumérer : un form
 | Espace formateur protégé | `POST /api/admin/check` sans mot de passe | ✅ `401` |
 | Participants non bloqués | `GET /api/quiz/<id bidon>` | ✅ `404` (et non `401`) |
 
-**Vérifié en local le 30/07/2026, après le passage à SQLite** (serveur sur un port de test, base isolée, quiz injecté directement dans le store pour éviter un appel IA) :
+### ⚠️ La leçon du 30/07/2026 : tester sur le Node de Railway, pas sur celui du poste
+
+La première tentative de persistance a été validée sur le poste de développement (Windows, Node 24) et déclarée bonne. Elle a mis la production à terre pendant une dizaine de minutes : `better-sqlite3` embarque un binaire compilé, et ce binaire segfaultait sur l'image Linux de Railway. **Un test « ça marche chez moi » ne dit rien dès qu'un composant compilé ou une version de runtime entre en jeu.**
+
+Depuis, la vérification se fait avec le **binaire Node de la version exacte de Railway** (`node-v22.23.1`), et pas seulement avec le Node du poste. C'est ce qui a permis de valider le portage vers `node:sqlite` sans second incident.
+
+**Vérifié le 30/07/2026 sur Node 22.23.1 — la version exacte de Railway :**
+
+| Épreuve | Portée | Résultat |
+| --- | --- | --- |
+| `node:sqlite` sans drapeau | `require('node:sqlite').DatabaseSync` | ✅ disponible |
+| Contrat du store SQLite | 17 vérifications sur `db.js` | ✅ toutes |
+| Contrat du store de repli | 15 vérifications sur `db-memory.js` | ✅ toutes — interfaces interchangeables |
+| Parcours HTTP complet | 12 vérifications sur le serveur réel | ✅ toutes |
+| **Après redémarrage du serveur** | 10 vérifications rejouées | ✅ titre, état, résultats et tentative unique retrouvés |
+| Repli en mode dégradé | stockage rendu volontairement impossible | ✅ serveur debout, cause exacte annoncée |
+| Les trois messages de démarrage | volume OK / volume absent / SQLite indisponible | ✅ chacun dit la vérité |
+
+**Vérifié en local le 30/07/2026, lors de la première tentative** (serveur sur un port de test, base isolée, quiz injecté directement dans le store pour éviter un appel IA) :
 
 | Point | Méthode | Résultat |
 | --- | --- | --- |

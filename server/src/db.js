@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+// SQLite intégré au runtime Node (>= 22.13). Volontairement PAS better-sqlite3 :
+// son binaire natif provoquait un « Segmentation fault » au démarrage sur Nixpacks
+// (Railway), impossible à rattraper. Un module intégré supprime cette classe de panne.
+// Le préfixe `node:` est obligatoire.
+const { DatabaseSync } = require('node:sqlite');
 
 // Où poser le fichier de base.
 // Sur Railway, un volume monté expose son chemin dans RAILWAY_VOLUME_MOUNT_PATH :
@@ -17,13 +21,26 @@ const isEphemeral = Boolean(
     !process.env.RAILWAY_VOLUME_MOUNT_PATH
 );
 
+const ephemeralReason = isEphemeral
+  ? 'aucun volume Railway monté — attachez un Volume au service, puis redéployez'
+  : null;
+
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const DB_PATH = path.join(DATA_DIR, 'kemet-quiz.db');
-const db = new Database(DB_PATH);
+const db = new DatabaseSync(DB_PATH);
 
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// node:sqlite n'a pas de db.pragma() : les pragmas passent par exec().
+// Il attend aussi 0 ms sur base verrouillée, là où better-sqlite3 attendait 5 s.
+db.exec('PRAGMA busy_timeout = 5000');
+// WAL améliore la concurrence, mais certains systèmes de fichiers le refusent.
+// On dégrade vers le journal par défaut plutôt que de tuer le serveur au démarrage.
+try {
+  db.exec('PRAGMA journal_mode = WAL');
+} catch (err) {
+  console.warn('WAL indisponible, journal par défaut :', err.message);
+}
+db.exec('PRAGMA foreign_keys = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS quizzes (
@@ -52,17 +69,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_results_name ON results(quiz_id, player_key);
 `);
 
-/**
- * Clé de comparaison des prénoms : « Awa », « awa » et « Awâ » désignent
- * la même personne pour la règle de tentative unique.
- */
-function nameKey(name) {
-  return String(name || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
+const { nameKey } = require('./name-key');
 
 function rowToQuiz(row) {
   if (!row) return null;
@@ -182,6 +189,7 @@ function addResult(quizId, result) {
 module.exports = {
   DB_PATH,
   isEphemeral,
+  ephemeralReason,
   createQuiz,
   getQuiz,
   updateQuiz,
