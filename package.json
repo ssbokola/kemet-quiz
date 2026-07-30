@@ -14,9 +14,6 @@
   "keywords": [],
   "author": "Kemet Services",
   "license": "ISC",
-  "engines": {
-    "node": ">=20"
-  },
   "devDependencies": {
     "concurrently": "^9.2.1"
   }

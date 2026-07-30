@@ -9,7 +9,6 @@ const envPath = path.join(__dirname, '..', '..', '.env');
 try { require('dotenv').config({ path: envPath, override: true }); } catch {};
 
 const cors = require('cors');
-const store = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -200,6 +199,19 @@ function quizAvailability(quiz) {
   return { ok: true };
 }
 
+function sameName(a, b) {
+  const clean = (s) =>
+    String(s || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  return clean(a) === clean(b);
+}
+
+// In-memory quiz store
+const quizzes = new Map();
+
 // Formateur : vérification du mot de passe
 app.post('/api/admin/check', (req, res) => {
   if (!ADMIN_PASSWORD) return res.json({ ok: true, open: true });
@@ -278,10 +290,11 @@ app.post('/api/upload-pdf', requireAdmin, upload.single('pdf'), async (req, res)
     const expiresInHours = parseInt(req.body.expiresInHours, 10);
     const singleAttempt = req.body.singleAttempt !== 'false';
 
-    store.createQuiz(quizId, {
+    quizzes.set(quizId, {
       title,
       questions: normalized.questions,
       createdAt: new Date().toISOString(),
+      results: [],
       // conservé pour permettre la régénération d'une question isolée
       sourceText: source.type === 'text' ? source.text.slice(0, 60000) : null,
       difficulty,
@@ -315,7 +328,7 @@ app.post('/api/upload-pdf', requireAdmin, upload.single('pdf'), async (req, res)
 
 // Admin: full quiz (with answers) — écran de relecture avant partage
 app.get('/api/quiz/:id/full', requireAdmin, (req, res) => {
-  const quiz = store.getQuiz(req.params.id);
+  const quiz = quizzes.get(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'Quiz introuvable' });
   res.json({
     title: quiz.title,
@@ -323,40 +336,36 @@ app.get('/api/quiz/:id/full', requireAdmin, (req, res) => {
     closed: quiz.closed,
     expiresAt: quiz.expiresAt,
     singleAttempt: quiz.singleAttempt,
-    resultsCount: store.countResults(req.params.id),
+    resultsCount: quiz.results.length,
   });
 });
 
 // Admin: enregistrer les corrections du formateur
 app.patch('/api/quiz/:id', requireAdmin, (req, res) => {
-  const quiz = store.getQuiz(req.params.id);
+  const quiz = quizzes.get(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'Quiz introuvable' });
 
   const { title, questions, closed, expiresInHours, singleAttempt } = req.body;
-  const patch = {};
 
   if (questions !== undefined) {
     try {
       const normalized = normalizeQuestions(questions);
-      patch.questions = normalized.questions;
+      quiz.questions = normalized.questions;
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
   }
 
-  if (typeof title === 'string' && title.trim()) patch.title = title.trim();
-  if (typeof closed === 'boolean') patch.closed = closed;
-  if (typeof singleAttempt === 'boolean') patch.singleAttempt = singleAttempt;
+  if (typeof title === 'string' && title.trim()) quiz.title = title.trim();
+  if (typeof closed === 'boolean') quiz.closed = closed;
+  if (typeof singleAttempt === 'boolean') quiz.singleAttempt = singleAttempt;
   if (expiresInHours !== undefined) {
     const hours = parseInt(expiresInHours, 10);
-    patch.expiresAt =
+    quiz.expiresAt =
       Number.isFinite(hours) && hours > 0
         ? new Date(Date.now() + hours * 3600 * 1000).toISOString()
         : null;
   }
-
-  store.updateQuiz(req.params.id, patch);
-  Object.assign(quiz, patch);
 
   console.log(`Quiz ${req.params.id} mis à jour (${quiz.questions.length} questions)`);
   res.json({
@@ -370,7 +379,7 @@ app.patch('/api/quiz/:id', requireAdmin, (req, res) => {
 
 // Admin: régénérer UNE question à partir du document d'origine
 app.post('/api/quiz/:id/regenerate/:index', requireAdmin, async (req, res) => {
-  const quiz = store.getQuiz(req.params.id);
+  const quiz = quizzes.get(req.params.id);
   if (!quiz) return res.status(404).json({ error: 'Quiz introuvable' });
 
   const index = parseInt(req.params.index, 10);
@@ -424,7 +433,6 @@ app.post('/api/quiz/:id/regenerate/:index', requireAdmin, async (req, res) => {
     }
 
     quiz.questions[index] = normalized.questions[0];
-    store.updateQuiz(req.params.id, { questions: quiz.questions });
     console.log(`Quiz ${req.params.id} — question ${index + 1} régénérée`);
     res.json({ question: normalized.questions[0] });
   } catch (err) {
@@ -435,7 +443,7 @@ app.post('/api/quiz/:id/regenerate/:index', requireAdmin, async (req, res) => {
 
 // Learner: get quiz by ID (questions without answers)
 app.get('/api/quiz/:id', (req, res) => {
-  const quiz = store.getQuiz(req.params.id);
+  const quiz = quizzes.get(req.params.id);
   if (!quiz) {
     return res.status(404).json({ error: 'Quiz introuvable' });
   }
@@ -460,7 +468,7 @@ app.get('/api/quiz/:id', (req, res) => {
 
 // Learner: submit answers
 app.post('/api/quiz/:id/submit', (req, res) => {
-  const quiz = store.getQuiz(req.params.id);
+  const quiz = quizzes.get(req.params.id);
   if (!quiz) {
     return res.status(404).json({ error: 'Quiz introuvable' });
   }
@@ -477,7 +485,7 @@ app.post('/api/quiz/:id/submit', (req, res) => {
 
   // Tentative unique : on refuse un second envoi sous le même prénom
   if (quiz.singleAttempt !== false) {
-    const previous = store.findResultByName(req.params.id, playerName);
+    const previous = quiz.results.find((r) => sameName(r.playerName, playerName));
     if (previous) {
       return res.status(409).json({
         error: `Une réponse a déjà été enregistrée pour ${previous.playerName} (${previous.score}/${previous.total}). Ce quiz n’autorise qu’une tentative.`,
@@ -503,7 +511,7 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     };
   });
 
-  store.addResult(req.params.id, {
+  quiz.results.push({
     playerName,
     score,
     total: quiz.questions.length,
@@ -523,12 +531,12 @@ app.post('/api/quiz/:id/submit', (req, res) => {
 
 // Admin: get results for a quiz
 app.get('/api/quiz/:id/results', requireAdmin, (req, res) => {
-  const quiz = store.getQuiz(req.params.id);
+  const quiz = quizzes.get(req.params.id);
   if (!quiz) {
     return res.status(404).json({ error: 'Quiz introuvable' });
   }
 
-  res.json({ title: quiz.title, results: store.listResults(req.params.id) });
+  res.json({ title: quiz.title, results: quiz.results });
 });
 
 // SPA fallback — serve index.html for all non-API routes
@@ -538,11 +546,4 @@ app.get('{*splat}', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Kemet Quiz API running on http://localhost:${PORT}`);
-  console.log(`Base de données : ${store.DB_PATH}`);
-  if (store.isEphemeral) {
-    console.warn(
-      '⚠️  Aucun volume Railway monté : la base vit dans le conteneur et sera EFFACÉE au prochain déploiement.\n' +
-        '    Attachez un Volume au service (Railway → service → Volumes), puis redéployez.'
-    );
-  }
 });

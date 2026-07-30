@@ -3,4 +3,3 @@ node_modules/
 dist/
 test.pdf
 .claude/settings.local.json
-data/
