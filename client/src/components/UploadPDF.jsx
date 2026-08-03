@@ -3,7 +3,13 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import Icon from './Icon';
 import RadioGroup from './RadioGroup';
-import { adminFetch } from '../api';
+import {
+  adminFetchOuReseau,
+  messageErreur,
+  messagePourFormateur,
+  setAdminPassword,
+  MESSAGE_RESEAU,
+} from '../api';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -57,6 +63,17 @@ if (typeof window !== 'undefined') {
   window.addEventListener('keydown', markActed, true);
 }
 
+// État « aucune erreur ». Partagé par les deux états d'erreur pour qu'ils
+// démarrent sur la MÊME référence : la recopie du montage ne change alors rien
+// et n'entraîne aucun rendu supplémentaire. Jamais muté : chaque écriture
+// produit un objet neuf.
+const AUCUNE_ERREUR = { texte: '', n: 0 };
+
+// Le filtre qui écarte les traces d'exception (« Unexpected token … is not valid
+// JSON », « Connection error. ») au profit d'un texte français actionnable vit
+// désormais dans api.js : il sert au flux NDJSON ci-dessous ET à toutes les
+// réponses HTTP, via messageErreur. Une seule définition, une seule règle.
+
 function formatSize(bytes) {
   if (!bytes) return '';
   const mo = bytes / (1024 * 1024);
@@ -86,10 +103,19 @@ function UploadPDF({ onQuizGenerated }) {
   const [singleAttempt, setSingleAttempt] = useState(true);
   const [expiresInHours, setExpiresInHours] = useState(0);
   const [dragOver, setDragOver] = useState(false);
-  const [error, setError] = useState('');
+  // Le texte du refus ET le NUMÉRO de son occurrence. Deux refus identiques
+  // d'affilée écrivent la même phrase : sans ce numéro l'état ne changerait
+  // pas, React court-circuiterait le rendu, le DOM de la région d'alerte ne
+  // muterait pas et le lecteur d'écran resterait muet au second appui. Le cas
+  // est PRÉVU par le code — handleInputChange remet la valeur de l'input à zéro
+  // pour que redéposer le MÊME fichier redéclenche onChange, donc redonne le
+  // même refus. Le numéro n'est jamais affiché : il sert de `key` au message,
+  // qui est ainsi démonté puis remonté DANS la région déjà présente. C'est une
+  // vraie mutation de son contenu, donc une vraie annonce, à chaque fois.
+  const [error, setError] = useState(AUCUNE_ERREUR);
   // Copie retardée d'un commit de `error` : c'est elle qui est rendue dans la
   // région d'alerte. Voir l'effet plus bas.
-  const [announcedError, setAnnouncedError] = useState('');
+  const [announcedError, setAnnouncedError] = useState(AUCUNE_ERREUR);
   const [loading, setLoading] = useState(false);
   // 'read' → 'write' → 'verify'
   const [stage, setStage] = useState('read');
@@ -103,6 +129,12 @@ function UploadPDF({ onQuizGenerated }) {
   const progressHeadingRef = useRef(null);
   const submitRef = useRef(null);
   const wasLoadingRef = useRef(false);
+
+  // Seules portes d'écriture de l'erreur : le numéro d'occurrence s'incrémente
+  // à CHAQUE appel, effacement compris. Ne jamais appeler setError directement,
+  // ce serait retomber sur l'état inchangé que ce numéro existe pour éviter.
+  const signalerErreur = (texte) => setError((prev) => ({ texte, n: prev.n + 1 }));
+  const effacerErreur = () => signalerErreur('');
 
   // Montage de l'écran. L'écran précédent (mur de mot de passe, écran de
   // partage) est démonté avec l'élément qui portait le focus : sans reprise, le
@@ -157,6 +189,9 @@ function UploadPDF({ onQuizGenerated }) {
   // Elle naît donc VIDE puis se remplit — même séquence que la région de
   // progression. Sur les erreurs sans changement d'écran la région est déjà
   // montée : le report d'un commit ne se voit pas.
+  // `error` étant un objet neuf à chaque écriture, cet effet se redéclenche même
+  // quand le texte est identique : c'est ce qui porte le numéro d'occurrence
+  // jusqu'à la `key` du message, et donc l'annonce du refus répété.
   useEffect(() => {
     setAnnouncedError(error);
   }, [error]);
@@ -171,7 +206,7 @@ function UploadPDF({ onQuizGenerated }) {
   // (mauvais format, envoi sans PDF) ne déplacent rien : le focus est resté
   // dans le formulaire et la région parle seule.
   useEffect(() => {
-    if (!loading && wasLoadingRef.current && error) submitRef.current?.focus();
+    if (!loading && wasLoadingRef.current && error.texte) submitRef.current?.focus();
     wasLoadingRef.current = loading;
   }, [loading, error]);
 
@@ -183,14 +218,16 @@ function UploadPDF({ onQuizGenerated }) {
     const isPdf =
       candidate.type === 'application/pdf' || candidate.name.toLowerCase().endsWith('.pdf');
     if (!isPdf) {
-      setError('Ce format n’est pas géré. Déposez un fichier PDF.');
+      // Refus typiquement répété : on redépose le même fichier non PDF sans
+      // avoir compris, d'où le passage obligé par signalerErreur.
+      signalerErreur('Ce format n’est pas géré. Déposez un fichier PDF.');
       return;
     }
     refocusRef.current = fromPicker;
     setFile(candidate);
     setPageCount(null);
     setTitle(candidate.name.replace(/\.pdf$/i, ''));
-    setError('');
+    effacerErreur();
   };
 
   // La valeur est remise à zéro pour que re-choisir le MÊME fichier déclenche
@@ -208,7 +245,7 @@ function UploadPDF({ onQuizGenerated }) {
     setFile(null);
     setPageCount(null);
     setTitle('');
-    setError('');
+    effacerErreur();
   };
 
   const handleDrop = (e) => {
@@ -222,14 +259,16 @@ function UploadPDF({ onQuizGenerated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) {
-      setError(
+      // Deuxième appui sur « Générer » toujours sans fichier : même phrase, mais
+      // occurrence suivante, donc annoncée de nouveau.
+      signalerErreur(
         'Choisissez d’abord un PDF : déposez-le dans la zone ci-dessus ou parcourez vos fichiers.'
       );
       return;
     }
 
     setLoading(true);
-    setError('');
+    effacerErreur();
     setStage('read');
     setReadProgress(null);
 
@@ -255,11 +294,36 @@ function UploadPDF({ onQuizGenerated }) {
 
       setStage('write');
 
-      const res = await adminFetch('/api/upload-pdf', { method: 'POST', body: formData });
+      // La promesse de fetch ne rejette QUE si la requête n'aboutit pas du tout
+      // — API arrêtée, réseau coupé. Ce cas n'a ni statut ni corps à traduire :
+      // `adminFetchOuReseau` le rejette avec MESSAGE_RESEAU, et il ne doit
+      // surtout pas se retrouver dans le repli générique ci-dessous, qui
+      // parlerait d'une réponse du serveur alors qu'il n'y en a jamais eu.
+      const res = await adminFetchOuReseau('/api/upload-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
       if (res.status === 401) {
-        throw new Error('Session expirée : rechargez la page et saisissez le mot de passe.');
+        // Le mot de passe conservé en session vient d'être refusé. Il faut le
+        // PURGER avant d'annoncer quoi que ce soit : l'espace formateur
+        // s'initialise déverrouillé dès que la session en contient un, donc
+        // tant qu'il y reste, recharger la page ne montre pas le mur de mot de
+        // passe — on retombe sur cet écran, on retente, on relit le même
+        // message, sans issue. Une fois purgé, le rechargement redemande
+        // réellement le mot de passe : l'action décrite ci-dessous fonctionne.
+        setAdminPassword('');
+        throw new Error(
+          'Votre accès n’est plus valide : rechargez la page, le mot de passe vous sera redemandé.'
+        );
       }
-      if (!res.ok) throw new Error(`Le serveur a répondu une erreur (${res.status}).`);
+      // Tout ce qui porte un statut passe par `messageErreur` : elle rend le
+      // message du serveur quand il en donne un, et dit que le serveur a échoué
+      // sur un 500 sans corps exploitable — celui du proxy quand l'API n'est pas
+      // démarrée — plutôt que d'inventer une cause.
+      if (!res.ok) {
+        throw new Error(await messageErreur(res, 'La génération du quiz a échoué.'));
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -268,7 +332,17 @@ function UploadPDF({ onQuizGenerated }) {
       let done = false;
 
       while (!done) {
-        const { value, done: streamDone } = await reader.read();
+        // Une lecture qui rejette, c'est le flux coupé en pleine fabrication
+        // (API arrêtée entre-temps, connexion perdue) : pas d'erreur métier, pas
+        // de statut, pas de corps — même message que pour une requête qui
+        // n'aboutit pas.
+        let chunk;
+        try {
+          chunk = await reader.read();
+        } catch {
+          throw new Error(MESSAGE_RESEAU);
+        }
+        const { value, done: streamDone } = chunk;
         if (streamDone) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -286,7 +360,13 @@ function UploadPDF({ onQuizGenerated }) {
             result = msg;
             done = true;
           } else if (msg.type === 'error') {
-            throw new Error(msg.error || 'Erreur inconnue');
+            // Erreur annoncée par le serveur dans le flux. Son message ne passe
+            // QUE s'il s'adresse à un humain : le serveur y relaie aussi, tel
+            // quel, le message d'une exception interne (anglais, technique).
+            // Le repli s'adresse au formateur et non au développeur.
+            throw new Error(
+              messagePourFormateur(msg.error, 'La fabrication du quiz a échoué, réessayez.')
+            );
           } else if (msg.type === 'progress') {
             setStage('write');
           }
@@ -310,7 +390,7 @@ function UploadPDF({ onQuizGenerated }) {
       // un écran de progression figé. Repli sur un texte : rien ne garantit
       // qu'un rejet porte une Error, et sans message `error` resterait vide —
       // région muette et reprise de focus inopérante.
-      setError(err?.message || 'La génération a échoué, réessayez.');
+      signalerErreur(err?.message || 'La génération a échoué, réessayez.');
     } finally {
       // Succès : le parent a déjà changé d'écran, ce composant est démonté et
       // l'appel est sans effet. Échec : il rend le formulaire utilisable.
@@ -612,13 +692,17 @@ function UploadPDF({ onQuizGenerated }) {
           garantit cette séquence même au remontage du formulaire. Le message
           n'est PAS focalisable : il est annoncé par la région et par elle
           seule, la reprise de focus vise le bouton d'envoi juste en dessous.
-          Garder la forme ternaire : `{announcedError && …}` avec une chaîne
-          vide peut laisser un nœud texte vide et casser :empty. */}
+          Garder la forme ternaire : `{announcedError.texte && …}` avec une
+          chaîne vide peut laisser un nœud texte vide et casser :empty.
+          La `key` porte le numéro d'occurrence : à refus identique répété, elle
+          change, React remplace le <p> au lieu de le laisser tel quel, et la
+          région — elle, toujours montée — voit bien son contenu muter. Sans
+          elle, le second refus identique n'est annoncé nulle part. */}
       <div className="error-slot" role="alert" aria-atomic="true">
-        {announcedError ? (
-          <p className="error-msg">
+        {announcedError.texte ? (
+          <p className="error-msg" key={announcedError.n}>
             <Icon name="info" size={16} width={1.8} />
-            <span>{announcedError}</span>
+            <span>{announcedError.texte}</span>
           </p>
         ) : null}
       </div>

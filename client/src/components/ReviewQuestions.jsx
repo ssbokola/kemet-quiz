@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 
-import { adminFetch } from '../api';
+import { adminFetchOuReseau, messageErreur } from '../api';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -26,7 +26,17 @@ function ReviewQuestions({
   const [items, setItems] = useState(questions);
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(null);
-  const [rowError, setRowError] = useState('');
+  // Le message porte un numéro d'occurrence : deux refus IDENTIQUES à la suite
+  // écriraient sinon la même chaîne, React court-circuiterait le rendu, le DOM
+  // ne muterait pas — et la région d'alerte resterait muette au second appui.
+  // Même motif que dans AdminGate et UploadPDF.
+  const [rowError, setRowError] = useState({ texte: '', n: 0 });
+  const signalerRowError = (texte) => setRowError((prec) => ({ texte, n: prec.n + 1 }));
+  // Copies retardées d'un commit des deux erreurs de l'écran : ce sont ELLES
+  // qui sont rendues dans les régions d'alerte, jamais les valeurs d'origine.
+  // Voir les effets plus bas.
+  const [announcedRowError, setAnnouncedRowError] = useState({ texte: '', n: 0 });
+  const [announcedPublishError, setAnnouncedPublishError] = useState('');
   const headingRef = useRef(null);
 
   // Convention de l'application : chaque écran reprend le focus sur son propre
@@ -39,6 +49,19 @@ function ReviewQuestions({
   useEffect(() => {
     headingRef.current?.focus();
   }, []);
+
+  // Aucun message n'est jamais rendu dans le commit qui monte sa région : il est
+  // recopié ici, au commit suivant. Une région live qui naît AVEC son texte
+  // n'est pas annoncée de façon fiable ; celles de cet écran naissent donc vides
+  // puis se remplissent, y compris au remontage de l'écran avec une erreur déjà
+  // présente (retour depuis l'écran de partage par « Modifier »).
+  useEffect(() => {
+    setAnnouncedRowError(rowError);
+  }, [rowError]);
+
+  useEffect(() => {
+    setAnnouncedPublishError(publishError);
+  }, [publishError]);
 
   const update = (idx, patch) =>
     setItems((prev) => prev.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
@@ -53,18 +76,58 @@ function ReviewQuestions({
     );
 
   const regenerate = async (idx) => {
+    // Les boutons de régénération ne sont plus désactivés (voir plus bas) :
+    // c'est ce garde d'entrée qui empêche deux régénérations simultanées. Le
+    // refus est MOTIVÉ et non silencieux — le bouton cliqué peut être celui
+    // d'une autre question que celle en cours, l'utilisateur doit savoir
+    // pourquoi rien ne se passe. Le message part dans la région d'alerte.
+    if (busy !== null) {
+      signalerRowError(
+        'Une régénération est déjà en cours. Attendez qu’elle se termine, puis réessayez.'
+      );
+      return;
+    }
     setBusy(idx);
-    setRowError('');
+    signalerRowError('');
     try {
-      const res = await adminFetch(`/api/quiz/${quizId}/regenerate/${idx}`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Régénération impossible');
+      // Une requête qui n'aboutit pas du tout (API arrêtée, réseau coupé) n'a ni
+      // statut ni corps à traduire : `adminFetchOuReseau` lui donne son propre
+      // message en français, au lieu du « Failed to fetch » du navigateur.
+      const res = await adminFetchOuReseau(`/api/quiz/${quizId}/regenerate/${idx}`, {
+        method: 'POST',
+      });
+      // Le contrôle du statut vient AVANT toute lecture du corps. L'ordre
+      // inverse faisait échouer l'analyse JSON sur les réponses qui n'en sont
+      // pas — page d'erreur d'une passerelle, corps vide d'un 500 — et le
+      // « Unexpected token… » de l'analyseur remplaçait alors le vrai message,
+      // y compris sur une erreur métier parfaitement explicite.
+      if (!res.ok) {
+        throw new Error(await messageErreur(res, 'La question n’a pas pu être régénérée.'));
+      }
+      // Sur le chemin nominal le corps est attendu, mais rien ne garantit qu'il
+      // soit lisible : un corps illisible ou sans question est un échec énoncé,
+      // pas une exception d'analyse ni une mise à jour avec `undefined`.
+      const data = await res.json().catch(() => null);
+      if (!data || !data.question) {
+        throw new Error(
+          'Le serveur a renvoyé une réponse inattendue, la question n’a pas pu être régénérée.'
+        );
+      }
       update(idx, data.question);
     } catch (err) {
-      setRowError(err.message);
+      // Repli : rien ne garantit qu'un rejet porte une Error, et sans message la
+      // région resterait muette.
+      signalerRowError(err?.message || 'La question n’a pas pu être régénérée.');
     } finally {
       setBusy(null);
     }
+  };
+
+  // Même règle que pour la régénération : le bouton reste actif, la double
+  // publication est bloquée ici.
+  const publish = () => {
+    if (publishing) return;
+    onPublish(items);
   };
 
   return (
@@ -91,12 +154,25 @@ function ReviewQuestions({
         </p>
       )}
 
-      {rowError && (
-        <p className="error-msg" style={{ marginBottom: 12 }}>
-          <Icon name="info" size={16} width={1.8} />
-          <span>{rowError}</span>
-        </p>
-      )}
+      {/* Conteneur monté EN PERMANENCE, près du titre : c'est lui qui porte
+          role="alert", pas le message. Une région ajoutée au DOM en même temps
+          que son texte n'est pas annoncée — d'où `announcedRowError`, retardé
+          d'un commit. La marge est portée par le conteneur et non par le
+          message : à vide, `.error-slot:empty` le sort du flux, marge comprise,
+          et aucune gouttière n'est consommée.
+          Garder la forme ternaire : `{announcedRowError && …}` avec une chaîne
+          vide peut laisser un nœud texte vide et casser :empty.
+          Le message n'est PAS focalisable : il est annoncé par la région et par
+          elle seule, et le bouton cliqué a gardé le focus (il n'est plus
+          désactivé pendant la requête). */}
+      <div className="error-slot" role="alert" aria-atomic="true" style={{ marginBottom: 12 }}>
+        {announcedRowError.texte ? (
+          <p className="error-msg" key={announcedRowError.n}>
+            <Icon name="info" size={16} width={1.8} />
+            <span>{announcedRowError.texte}</span>
+          </p>
+        ) : null}
+      </div>
 
       <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
         {items.map((q, idx) => {
@@ -114,16 +190,26 @@ function ReviewQuestions({
                     <Icon name={isEditing ? 'check' : 'edit'} size={12} width={1.8} />
                     {isEditing ? 'Terminé' : 'Modifier'}
                   </button>
+                  {/* Même raison que le bouton « Publier » plus bas : jamais
+                      désactivé. Le bouton cliqué gardait autrement le focus
+                      moins d'une seconde avant que `disabled` ne le lui
+                      retire, laissant l'échec sans annonce ET sans commande
+                      focalisée. Le cumul est refusé par le garde d'entrée de
+                      `regenerate`, avec un message dans la région d'alerte. */}
                   <button
                     type="button"
                     className="tool-btn"
                     onClick={() => regenerate(idx)}
-                    disabled={busy !== null}
+                    aria-busy={busy === idx}
                     aria-label="Régénérer cette question"
                     title="Régénérer cette question"
                   >
                     {busy === idx ? (
-                      <span className="spinner spinner--sm" style={{ width: 13, height: 13 }} />
+                      <span
+                        className="spinner spinner--sm"
+                        style={{ width: 13, height: 13 }}
+                        aria-hidden="true"
+                      />
                     ) : (
                       <Icon name="refresh" size={13} width={1.8} />
                     )}
@@ -190,23 +276,38 @@ function ReviewQuestions({
         })}
       </div>
 
-      {publishError && (
-        <p className="error-msg" style={{ marginTop: 14 }}>
-          <Icon name="info" size={16} width={1.8} />
-          <span>{publishError}</span>
-        </p>
-      )}
+      {/* Seconde région d'alerte permanente, juste au-dessus du bouton
+          « Publier » : l'échec de publication est ainsi annoncé, et il est
+          visible à l'endroit même où l'utilisateur se trouve — le bouton garde
+          le focus pendant toute la requête. Mêmes règles que la région
+          ci-dessus : texte retardé d'un commit, forme ternaire, marge sur le
+          conteneur. */}
+      <div className="error-slot" role="alert" aria-atomic="true" style={{ marginTop: 14 }}>
+        {announcedPublishError ? (
+          <p className="error-msg">
+            <Icon name="info" size={16} width={1.8} />
+            <span>{announcedPublishError}</span>
+          </p>
+        ) : null}
+      </div>
 
       <div className="sticky-actions">
+        {/* Bouton volontairement TOUJOURS actif. `disabled` pendant la requête
+            faisait perdre le focus : c'est ce bouton qui l'a au moment du clic,
+            le navigateur le blure en le désactivant et le focus retombe sur
+            <body> — à l'échec le message arrivait donc sans qu'aucune commande
+            ne soit atteignable pour réessayer. La double publication est
+            bloquée par le garde d'entrée de `publish`, et l'attente est exposée
+            par aria-busy plutôt que par une indisponibilité. */}
         <button
           type="button"
           className="btn btn--ink btn--block"
-          onClick={() => onPublish(items)}
-          disabled={publishing}
+          onClick={publish}
+          aria-busy={publishing}
         >
           {publishing ? (
             <>
-              <span className="btn-spinner" /> Enregistrement…
+              <span className="btn-spinner" aria-hidden="true" /> Enregistrement…
             </>
           ) : (
             <>

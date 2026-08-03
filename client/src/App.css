@@ -1601,7 +1601,14 @@
   gap: 22px;
 }
 
-.recap h2 {
+/* :is(h1, h2) — l'écran de récapitulatif REMPLACE .quiz-body, seul porteur du
+   niveau 1 de la passation (.quiz-question) : sur cet écran la page n'a donc
+   aucun h1 et ce titre est un candidat direct à la promotion, exactement comme
+   .progress-head et .review-head avant lui. Spécificité inchangée : :is() prend
+   celle de son argument le plus spécifique, soit un type, donc 0-1-1 comme
+   « .recap h2 ». Sans cette précaution le titre retomberait sur le défaut
+   navigateur (2em gras sans-serif) au lieu du serif 30px. */
+.recap :is(h1, h2) {
   font-family: var(--serif);
   font-size: 30px;
   font-weight: 400;
@@ -1737,7 +1744,14 @@
   gap: 12px;
 }
 
-.sheet-head h3 {
+/* :is(h2, h3) — les deux surfaces role="dialog" (.sheet ici, .modal plus bas)
+   reçoivent dans ce lot le déplacement, l'enfermement et la restitution du
+   focus. Leur titre est encore un h3 au moment où ces lignes sont écrites, mais
+   il devient la cible naturelle du focus d'ouverture et de l'aria-labelledby :
+   c'est précisément le titre qu'on remonte d'un cran. Le dialogue s'ouvre
+   par-dessus .quiz, qui porte déjà le niveau 1 (.quiz-question) — h2 est donc le
+   seul autre niveau plausible. Spécificité inchangée (0-1-1). */
+.sheet-head :is(h2, h3) {
   font-size: 16px;
   font-weight: 600;
   color: #fff;
@@ -1894,7 +1908,8 @@
   }
 }
 
-.modal h3 {
+/* :is(h2, h3) — voir .sheet-head : même dialogue, même promotion possible. */
+.modal :is(h2, h3) {
   font-family: var(--serif);
   font-size: 24px;
   font-weight: 400;
@@ -2186,7 +2201,11 @@
   margin-bottom: 4px;
 }
 
-.empty-state h2 {
+/* :is(h1, h2) — .empty-state est monté SEUL sous l'AppBar (QuizPage.jsx : quiz
+   introuvable, quiz clôturé, déjà répondu). Ces pages ne comptent aucun autre
+   titre : leur h2 est le candidat le plus évident à la promotion en h1.
+   Spécificité inchangée (0-1-1), même raisonnement que .progress-head. */
+.empty-state :is(h1, h2) {
   font-family: var(--serif);
   font-size: 26px;
   font-weight: 400;

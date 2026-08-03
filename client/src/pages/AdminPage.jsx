@@ -4,7 +4,7 @@ import UploadPDF from '../components/UploadPDF';
 import ReviewQuestions from '../components/ReviewQuestions';
 import AdminGate from '../components/AdminGate';
 import Icon from '../components/Icon';
-import { adminFetch, getAdminPassword } from '../api';
+import { adminFetch, getAdminPassword, messageErreur, MESSAGE_RESEAU } from '../api';
 
 function formatExpiry(iso) {
   if (!iso) return null;
@@ -66,9 +66,27 @@ function AdminPage() {
     pendingErrorRef.current = '';
     setDropped(data.dropped || 0);
     try {
-      const res = await adminFetch(`/api/quiz/${data.quizId}/full`);
-      const full = await res.json();
-      if (!res.ok) throw new Error(full.error || 'Chargement impossible');
+      // fetch ne rejette que si la requête n'aboutit pas du tout : ni statut ni
+      // corps à traduire, donc son propre message.
+      let res;
+      try {
+        res = await adminFetch(`/api/quiz/${data.quizId}/full`);
+      } catch {
+        throw new Error(MESSAGE_RESEAU);
+      }
+      // Le contrôle du statut vient AVANT toute lecture du corps : `messageErreur`
+      // consomme la réponse et un corps ne se lit qu'une fois. C'est aussi ce qui
+      // évite l'erreur d'analyse JSON quand l'API est arrêtée — le proxy renvoie
+      // alors une page d'erreur qui n'est pas du JSON.
+      if (!res.ok) {
+        throw new Error(await messageErreur(res, 'Le quiz n’a pas pu être chargé.'));
+      }
+      const full = await res.json().catch(() => null);
+      if (!full) {
+        throw new Error(
+          'Le serveur a renvoyé une réponse inattendue, le quiz n’a pas pu être chargé.'
+        );
+      }
       setQuiz({
         quizId: data.quizId,
         title: full.title,
@@ -82,8 +100,10 @@ function AdminPage() {
       setQuiz({ quizId: data.quizId, title: data.title, questions: [] });
       // Pas de setLoadError ici : la région d'alerte n'existe pas encore, elle
       // naîtrait déjà pleine et ne serait pas annoncée. L'effet [step] la
-      // remplit une fois l'écran monté.
-      pendingErrorRef.current = err.message;
+      // remplit une fois l'écran monté. Le repli n'est pas décoratif : un rejet
+      // sans message laisserait la référence vide, l'effet [step] ne déposerait
+      // rien et la région resterait muette.
+      pendingErrorRef.current = err?.message || 'Le quiz n’a pas pu être chargé.';
       setStep('share');
     }
   };
@@ -92,17 +112,25 @@ function AdminPage() {
     setPublishing(true);
     setPublishError('');
     try {
-      const res = await adminFetch(`/api/quiz/${quiz.quizId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questions }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Enregistrement impossible');
+      let res;
+      try {
+        res = await adminFetch(`/api/quiz/${quiz.quizId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questions }),
+        });
+      } catch {
+        throw new Error(MESSAGE_RESEAU);
+      }
+      // Le corps de la réponse ne sert qu'en cas d'échec, et c'est `messageErreur`
+      // qui le lit : rien à analyser sur le chemin nominal.
+      if (!res.ok) {
+        throw new Error(await messageErreur(res, 'Les questions n’ont pas pu être enregistrées.'));
+      }
       setQuiz((prev) => ({ ...prev, questions }));
       setStep('share');
     } catch (err) {
-      setPublishError(err.message);
+      setPublishError(err?.message || 'Les questions n’ont pas pu être enregistrées.');
     } finally {
       setPublishing(false);
     }
@@ -116,13 +144,27 @@ function AdminPage() {
     setLoadError('');
     setAnnouncement('');
     try {
-      const res = await adminFetch(`/api/quiz/${quiz.quizId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ closed: !quiz.closed }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Action impossible');
+      let res;
+      try {
+        res = await adminFetch(`/api/quiz/${quiz.quizId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ closed: !quiz.closed }),
+        });
+      } catch {
+        throw new Error(MESSAGE_RESEAU);
+      }
+      if (!res.ok) {
+        throw new Error(await messageErreur(res, 'Le statut du quiz n’a pas pu être modifié.'));
+      }
+      // Ici le corps sert vraiment : c'est lui qui donne l'état retenu par le
+      // serveur, et c'est cet état — pas la valeur demandée — qui est annoncé.
+      const data = await res.json().catch(() => null);
+      if (!data) {
+        throw new Error(
+          'Le serveur a renvoyé une réponse inattendue, le statut du quiz n’a pas pu être modifié.'
+        );
+      }
       setQuiz((prev) => ({ ...prev, closed: data.closed }));
       setAnnouncement(
         data.closed
@@ -130,7 +172,7 @@ function AdminPage() {
           : 'Quiz réouvert : le lien fonctionne à nouveau.'
       );
     } catch (err) {
-      setLoadError(err.message);
+      setLoadError(err?.message || 'Le statut du quiz n’a pas pu être modifié.');
     } finally {
       setClosing(false);
     }
@@ -138,6 +180,14 @@ function AdminPage() {
 
   const handleCopy = async () => {
     clearTimeout(copyTimerRef.current);
+    // Même précaution que toggleClosed, et pour la même raison : on vide
+    // l'annonce et l'erreur AVANT l'attente. Deux copies — ou deux échecs —
+    // consécutifs réécriraient sinon la même chaîne, donc aucune mutation du
+    // DOM, donc aucune annonce. Les deux régions sont remises à zéro parce que
+    // l'une et l'autre servent désormais à ce gestionnaire, et parce que le
+    // résultat affiché doit être celui de la DERNIÈRE action.
+    setAnnouncement('');
+    setLoadError('');
     try {
       await navigator.clipboard.writeText(quizLink);
       setCopied(true);
@@ -152,7 +202,10 @@ function AdminPage() {
       }, 2000);
     } catch {
       setCopied(false);
-      setAnnouncement('La copie a échoué. Sélectionnez le lien puis copiez-le à la main.');
+      // Un échec n'a rien à faire dans la région polie : il rejoint la région
+      // d'alerte assertive, avec les autres erreurs de l'écran. Seul le SUCCÈS
+      // de la copie reste une annonce polie.
+      setLoadError('La copie a échoué. Sélectionnez le lien puis copiez-le à la main.');
     }
   };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import Icon from './Icon';
 
@@ -20,9 +20,21 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
   const [displayScore, setDisplayScore] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
   const wrongCount = correction.filter((c) => !c.isCorrect).length;
+  const headingRef = useRef(null);
 
+  // Convention de l'application : chaque écran reprend le focus sur son propre
+  // titre principal à son montage. Le passage passation → résultats est un
+  // changement d'écran sans navigation : Quiz est démonté avec l'élément qui
+  // portait le focus, et son piège à focus refuse volontairement de le rendre à
+  // un déclencheur disparu. Sans cette reprise, le focus retombe sur <body> et
+  // la tabulation repart du haut du document — au moment précis où le
+  // participant veut connaître son score.
+  // Aucun risque de vol de focus au premier rendu de l'application : QuizPage
+  // démarre à l'étape « welcome » et ne rend Results qu'une fois les réponses
+  // envoyées, cet écran n'est donc jamais le tout premier monté.
   useEffect(() => {
     document.body.classList.remove('theme-ink');
+    headingRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -206,9 +218,35 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
       )}
 
       <div className="score-hero">
-        <span className="score-who">
+        {/* Titre de l'écran de résultats — seul h1 de la vue (l'app-bar n'en porte
+            aucun). Il nomme la COPIE (qui, sur quel quiz), pas le score : celui-ci
+            est énoncé juste en dessous, dans l'anneau puis dans .score-grade, et
+            l'ajouter au nom accessible le ferait lire deux fois. Le chiffre visible
+            est de surcroît animé (displayScore), donc un nom enrichi figerait une
+            valeur en désaccord avec les pixels pendant les 900 premières ms.
+            La CLASSE est conservée, seule la BALISE change : .score-who fixe
+            font-size, font-weight, color, letter-spacing et text-transform — qui
+            écrasent les valeurs par défaut du h1 — le reset global (* { margin: 0 })
+            annule sa marge, et .score-hero étant un conteneur flex, <span> comme
+            <h1> sont blockifiés à l'identique. Rendu strictement inchangé. */}
+        {/* tabIndex={-1} : cible de la reprise de focus au changement d'écran,
+            hors de l'ordre de tabulation. Le focus est PROGRAMMATIQUE et le
+            seul anneau de l'application est le :focus-visible global
+            d'index.css — App.css ne pose de :focus que sur des champs de
+            saisie (.input, .q-card-input, .q-option-input) et rien sur
+            .score-who ni .score-hero. Aucun anneau n'apparaît donc au montage,
+            et .score-hero n'a pas d'overflow qui le rognerait si un lecteur au
+            clavier venait à en déclencher un. */}
+        <h1 className="score-who" ref={headingRef} tabIndex={-1}>
           {playerName} · {title}
-        </span>
+        </h1>
+        {/* Le conic-gradient de l'anneau est purement décoratif : il ne fait que
+            redessiner le pourcentage déjà écrit en toutes lettres dans
+            .score-grade. Ce <div> ne porte donc NI role="img" + aria-label — ce
+            serait une seconde énonciation du même chiffre — NI aria-hidden, qui
+            masquerait le score lui-même, porté par le texte de .score-ring-inner.
+            Un <div> sans rôle ni nom accessible n'expose que son contenu : le
+            score est lu une fois, le dégradé n'est pas lu. */}
         <div
           className="score-ring"
           style={{
@@ -248,7 +286,17 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
         </div>
 
         <div className="review-bar">
-          <span className="review-bar-title">Correction</span>
+          {/* Niveau 2 sous le h1 du bandeau de score : la liste de correction,
+              qui compte 10 à 30 cartes, devient atteignable d'un seul appui en
+              navigation par titres. Aucun h3 en dessous — « QUESTION n » reste un
+              <span> dans .r-card-head : une seule section est ouverte par ce h2,
+              un niveau 3 n'y ajouterait aucune structure et créerait 10 à 30
+              titres bruyants. Le document va donc h1 → h2, sans saut ni orphelin.
+              Comme pour le h1, seule la BALISE change : .review-bar-title fixe
+              font-size, font-weight et color, .review-bar est un conteneur flex
+              (le h2 y est un item comme l'était le span) et le reset global annule
+              la marge par défaut. Rendu strictement inchangé. */}
+          <h2 className="review-bar-title">Correction</h2>
           {wrongCount > 0 && (
             <span className="review-bar-count">
               {wrongCount} à revoir
