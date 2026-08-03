@@ -266,11 +266,56 @@
   color: var(--text-2);
 }
 
-.field-row {
+/* Palier 1 — LA DÉCISION. Le nombre de questions et le niveau sont les deux
+   seuls réglages qui pilotent ce que le modèle écrit : s'y tromper impose une
+   régénération payante, alors que tentatives et validité se rattrapent après
+   coup. .card, définie plus haut et jusqu'ici sans aucun usage en JSX, est
+   RÉVEILLÉE pour les porter plutôt que redéclarée sous un nom neuf : c'est sa
+   rareté qui fait le rang du palier. Seule surface blanche de l'écran, elle dit
+   « ça se décide ici » sans un mot. Ne JAMAIS habiller un second bloc de .card
+   sur cet écran, la hiérarchie s'annulerait. */
+.field-lead {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+@media (min-width: 720px) {
+  .field-lead {
+    padding: 18px;
+  }
+}
+
+/* 0-2-0 : l'emporte sur .field-label (0-1-0) quel que soit l'ordre des règles.
+   --text (#1f1d24) sur #fff = 16,67:1. */
+.field-label.field-label--lead {
+  font-size: 15px;
+  color: var(--text);
+}
+
+/* Valeur qui se RECALCULE, par opposition à l'aide statique en --text-3 :
+   --text-2 (#4f4a41) sur #fff = 8,79:1. */
+.field-readout {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* 0-2-0 : l'emporte sur .segment (0-1-0) sans dépendre de l'ordre. 52px aligne
+   la hauteur de .btn. Cible tactile à 375px : (339 − 32 de padding − 2 de
+   bordure − 4 gouttières de 8px) / 5 = 54,6 × 52px, au-dessus des 44 × 44 de
+   WCAG 2.5.5.
+   Les .segment gardent leur fond #fff et leur bordure --line-control, soit
+   3,76:1 sur le blanc de la carte (documenté index.css l.62), au-dessus des 3:1
+   de WCAG 1.4.11 — même précédent que .q-option-input sur .q-card plus bas.
+   .segment.is-active (aplat --ink, texte #fff, 16,67:1) est inchangée et reste
+   le signal le plus fort de l'écran après le CTA. La bordure --line de .card est
+   un séparateur PUREMENT DÉCORATIF, conforme au contrat écrit du token
+   (index.css l.57-59) : aucun contenu n'en dépend pour être compris. */
+.field-lead .segment {
+  min-height: 52px;
+  font-size: 16px;
 }
 
 /* AUCUN champ de saisie ne déclare « outline: none ». App.css est chargé APRÈS
@@ -306,8 +351,8 @@
 }
 
 /* Le conteneur role="alert" est monté EN PERMANENCE : une région live ajoutée
-   au DOM après coup n'est pas annoncée. Enfant direct de .stack (gap: 22px), il
-   consommerait une gouttière entière à vide.
+   au DOM après coup n'est pas annoncée. Enfant de .sticky-actions--stacked
+   (colonne flex, gap: 8px), il consommerait une gouttière entière à vide.
    display: none réglait la gouttière mais retirait AUSSI la région de l'arbre
    d'accessibilité tant qu'elle est vide : elle passait donc d'ABSENTE à
    PRÉSENTE-AVEC-TEXTE en un seul commit — exactement le scénario que le montage
@@ -697,6 +742,115 @@
 
 .choice.is-active .choice-desc {
   color: #7a6528;
+}
+
+/* ---------- Palier 3 : le tiroir « Diffusion du lien » ---------- */
+.advanced {
+  border-top: 1px solid var(--line); /* séparateur décoratif, cf. contrat du token */
+  padding-top: 10px;
+}
+
+/* La surface de survol déborde de 14px de chaque côté pour respirer, mais le
+   TEXTE reste aligné sur la colonne du formulaire : box-sizing: border-box est
+   global (index.css l.95-101), donc calc(100% + 28px) moins 28px de padding
+   redonne exactement 100% de largeur de contenu. */
+.disclosure {
+  width: calc(100% + 28px);
+  margin-inline: -14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  row-gap: 3px;
+  min-height: 56px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  border-radius: 12px; /* même rayon que .choice et .segment */
+  text-align: left;
+  cursor: pointer;
+}
+
+.disclosure:hover {
+  background: #fff;
+}
+
+/* --text-2 sur --paper-3 = 7,32:1 · sur #fff au survol = 8,79:1 */
+.disclosure-label {
+  grid-column: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* Le résumé ne doit JAMAIS être tronqué — c'est exactement le défaut qu'on
+   corrige. Pas de nowrap, pas de text-overflow : il passe à la ligne.
+   Pire cas « Tentatives libres · Lien valide 7 jours » ≈ 41 caractères à
+   11,5px ≈ 240px : tient sur une ligne dès 375px.
+   --text-3 (#6b6459) sur --paper-3 = 4,87:1 · sur #fff au survol = 5,85:1.
+   4,87:1 est conforme à 11,5px, taille qui n'ouvre droit à aucune exemption
+   « grand texte » (seuil 18,66px). */
+.disclosure-values {
+  grid-column: 1;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+/* Le séparateur HÉRITE la couleur du résumé : aucun ratio propre à tenir, et il
+   suit l'état is-custom sans règle supplémentaire. */
+.disclosure-sep {
+  margin: 0 6px;
+}
+
+/* Un réglage qui a quitté sa valeur par défaut ne peut plus être invisible,
+   même tiroir fermé, même en balayage rapide.
+   --gold-deep (#7a6528) sur --paper-3 = 4,70:1 · sur #fff au survol = 5,65:1. */
+.disclosure.is-custom .disclosure-values {
+  color: var(--gold-deep);
+  font-weight: 600;
+}
+
+/* Décoratif : Icon pose aria-hidden. L'état est porté par aria-expanded ET par
+   le texte du résumé, jamais par ce seul chevron — pas d'exigence 1.4.11.
+   --text-3 sur --paper-3 donne 4,87:1 de toute façon. */
+.disclosure-chevron {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--text-3);
+  transition: transform 0.18s;
+}
+
+.disclosure[aria-expanded='true'] .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+/* Le tiroir ouvert s'enfonce d'un cran : il ne doit pas se relire comme un pair
+   de la carte blanche. 18px de gouttière contre 22px au niveau de .stack.
+   fade-in est déjà neutralisée par le bloc prefers-reduced-motion global
+   (index.css l.154-161) : rien à ajouter ici.
+   Contrastes sur ce fond --paper-2, tous vérifiés : .choice et .segment gardent
+   leur fond #fff, leur bordure --line-control donne 3,27:1 contre --paper-2 et
+   3,76:1 contre leur propre blanc ; .choice.is-active porte --gold-line à 1,5px,
+   soit 3,89:1 sur --paper-2 ; les .field-label internes (--text-2) donnent
+   7,66:1 et le texte d'aide en .dropzone-meta (--text-3) 5,09:1 ; l'anneau
+   --focus-ring vaut 3,89:1 sur --paper-2. */
+.adv-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 14px;
+  background: var(--paper-2);
+  border-radius: var(--r-md);
+  animation: fade-in 0.25s ease; /* keyframes existantes, plus haut */
+}
+
+/* PIÈGE À NE PAS MANQUER — sans cette ligne l'attribut `hidden` est SANS EFFET :
+   la feuille de l'auteur l'emporte sur celle du navigateur, `display: flex`
+   écrase le `display: none` de la règle UA [hidden] et le tiroir reste ouvert en
+   permanence. Le bug ne se voit PAS dans une revue de JSX. */
+.adv-panel[hidden] {
+  display: none;
 }
 
 /* Quiz récents */
@@ -1095,14 +1249,50 @@
   border-color: var(--gold-line);
 }
 
+/* env(safe-area-inset-bottom) — correctif de portée GÉNÉRALE, pas un ajout de
+   l'écran de dépôt : .quiz-foot possédait déjà cet inset, .sticky-actions non,
+   si bien que sur iPhone à encoche la barre de l'écran de relecture frôlait la
+   barre d'accueil. Le correctif déplace donc de quelques pixels le bas d'un
+   écran déjà livré (ReviewQuestions) : à ANNONCER dans le message de commit.
+   Hors encoche env() vaut 0 et le rendu est strictement inchangé. */
 .sticky-actions {
   position: sticky;
   bottom: 0;
   display: flex;
   gap: 10px;
-  padding: 14px 0 18px;
+  padding: 14px 0 calc(18px + env(safe-area-inset-bottom));
   margin-top: 18px;
   background: linear-gradient(to top, var(--paper-3) 72%, rgba(237, 234, 228, 0));
+}
+
+/* Variante en colonne : erreur, bouton pleine largeur, puis légende. Le
+   .btn-hint (11,5px, --text-3) tombe SOUS le bouton, donc dans les 72 % opaques
+   du dégradé — 4,87:1 sur --paper-3 plein. Le bouton porte son propre aplat
+   --gold, la zone de fondu ne l'affecte pas. */
+.sticky-actions--stacked {
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 0; /* la gouttière de 22px de .stack suffit ; sans cela 22 + 18 */
+}
+
+/* WCAG 2.4.11 — un contrôle qui prend le focus en fin de zone défilable ne doit
+   pas se retrouver SOUS la barre collante. 140px = hauteur type de la barre au
+   repos (14 + 52 + 8 + 17 + 18 = 109) plus la marge du cas « message d'erreur ».
+   Ciblé sur les seuls contrôles concernés : volontairement PAS de
+   scroll-padding-bottom global sur html, qui frapperait aussi l'écran de
+   passation en thème encre. */
+/* Le dégagement doit couvrir la barre dans son état le PLUS HAUT, pas au repos.
+   La barre mesure ~109 px tant qu'aucun message n'y figure, mais l'.error-slot
+   qu'elle contient entre en flux dès qu'une erreur arrive : elle monte alors à
+   185-206 px. Calibrer sur l'état de repos laissait le contrôle focalisé caché
+   derrière la barre au moment précis où un message explique quoi corriger.
+   Sur-réserver ne coûte qu'un peu de vide au-dessus de la barre ; sous-réserver
+   cache le contrôle. */
+.segment,
+.choice,
+.input,
+.disclosure {
+  scroll-margin-bottom: 215px;
 }
 
 .meta-row {

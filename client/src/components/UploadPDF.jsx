@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import Icon from './Icon';
@@ -20,16 +20,25 @@ const DIFFICULTY_OPTIONS = [
   { value: 'difficile', label: 'Difficile', desc: "cas d'application" },
 ];
 
+// `resume` : le mot qui représente l'option quand le tiroir « Diffusion du lien »
+// est replié. Chaque résumé est AUTOPORTANT — il nomme sa propre dimension —
+// parce qu'il se lit hors de son libellé : « Libre » seul ne dirait pas de quoi.
 const EXPIRY_OPTIONS = [
-  { value: 0, label: 'Sans limite' },
-  { value: 24, label: '24 h' },
-  { value: 168, label: '7 jours' },
+  { value: 0, label: 'Sans limite', resume: 'Lien sans limite' },
+  { value: 24, label: '24 h', resume: 'Lien valide 24 h' },
+  { value: 168, label: '7 jours', resume: 'Lien valide 7 jours' },
 ];
 
 const ATTEMPT_OPTIONS = [
-  { value: true, label: '1 tentative', desc: 'un score par participant' },
-  { value: false, label: 'Libre', desc: 'entraînement, rejouable' },
+  { value: true, label: '1 tentative', desc: 'un score par participant', resume: '1 tentative' },
+  { value: false, label: 'Libre', desc: 'entraînement, rejouable', resume: 'Tentatives libres' },
 ];
+
+// Les valeurs par défaut du tiroir n'existent qu'ICI : elles servent à la fois à
+// initialiser l'état et à détecter qu'un réglage a été personnalisé. Deux
+// écritures séparées dériveraient en silence, et le tiroir cesserait de signaler
+// un réglage modifié sans qu'aucun test ne s'en aperçoive.
+const REGLAGES_PAR_DEFAUT = { singleAttempt: true, expiresInHours: 0 };
 
 const STAGE_ORDER = ['read', 'write', 'verify'];
 
@@ -100,8 +109,12 @@ function UploadPDF({ onQuizGenerated }) {
   const [title, setTitle] = useState('');
   const [numQuestions, setNumQuestions] = useState(10);
   const [difficulty, setDifficulty] = useState('moyen');
-  const [singleAttempt, setSingleAttempt] = useState(true);
-  const [expiresInHours, setExpiresInHours] = useState(0);
+  const [singleAttempt, setSingleAttempt] = useState(REGLAGES_PAR_DEFAUT.singleAttempt);
+  const [expiresInHours, setExpiresInHours] = useState(REGLAGES_PAR_DEFAUT.expiresInHours);
+  // Repli du tiroir « Diffusion du lien ». Il ne pilote QUE l'attribut `hidden`
+  // du panneau, jamais son rendu : les deux radiogroups qu'il contient ne sont
+  // donc jamais démontés.
+  const [diffusionOuverte, setDiffusionOuverte] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // Le texte du refus ET le NUMÉRO de son occurrence. Deux refus identiques
   // d'affilée écrivent la même phrase : sans ce numéro l'état ne changerait
@@ -255,6 +268,17 @@ function UploadPDF({ onQuizGenerated }) {
   };
 
   const estMinutes = Math.max(2, Math.round(numQuestions * MINUTES_PER_QUESTION));
+
+  // Valeurs DÉRIVÉES, recalculées à chaque rendu : ni état, ni effet. Le résumé
+  // du tiroir est donc déjà à jour au moment où on le referme, et le drapeau de
+  // personnalisation ne peut pas se désynchroniser des réglages qu'il décrit.
+  const resumeDiffusion = [
+    ATTEMPT_OPTIONS.find((o) => o.value === singleAttempt),
+    EXPIRY_OPTIONS.find((o) => o.value === expiresInHours),
+  ].map((o) => o.resume);
+  const diffusionPersonnalisee =
+    singleAttempt !== REGLAGES_PAR_DEFAUT.singleAttempt ||
+    expiresInHours !== REGLAGES_PAR_DEFAUT.expiresInHours;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -591,6 +615,62 @@ function UploadPDF({ onQuizGenerated }) {
 
       {file && (
         <>
+          {/* Palier 1 — LA DÉCISION. Seule carte blanche de l'écran : le nombre
+              de questions et le niveau sont les deux seuls réglages qui pilotent
+              ce que le modèle écrit, donc les deux seuls dont l'erreur impose
+              une régénération. Tentatives et validité se rattrapent après coup
+              depuis l'espace formateur : ils descendent dans le tiroir. */}
+          <div className="card field-lead">
+            <div className="field">
+              <span className="field-label field-label--lead" id="qcount-label">
+                Nombre de questions
+              </span>
+              <RadioGroup
+                className="segments"
+                labelledBy="qcount-label"
+                describedBy="qcount-est"
+                options={QUESTION_OPTIONS}
+                value={numQuestions}
+                onChange={setNumQuestions}
+                optionClassName={(opt, checked) => `segment ${checked ? 'is-active' : ''}`}
+              />
+              {/* Aucune région live ici : les flèches du radiogroup appellent
+                  onChange à CHAQUE appui, une région polie empilerait autant
+                  d'annonces (« Environ 5 min de passation », « Environ 8 min de
+                  passation »…) par-dessus l'annonce de focus de chaque option.
+                  L'estimation est exposée par le aria-describedby que RadioGroup
+                  pose sur l'option focalisable, lue à l'entrée du focus dans le
+                  groupe. */}
+              <span className="field-readout" id="qcount-est">
+                Environ {estMinutes} min de passation
+              </span>
+            </div>
+
+            <div className="field">
+              <span className="field-label field-label--lead" id="level-label">
+                Niveau
+              </span>
+              <RadioGroup
+                className="choices"
+                labelledBy="level-label"
+                options={DIFFICULTY_OPTIONS}
+                value={difficulty}
+                onChange={setDifficulty}
+                optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
+                renderOption={(opt) => (
+                  <>
+                    <span className="choice-dot" />
+                    <span className="choice-label">{opt.label}</span>
+                    <span className="choice-desc">{opt.desc}</span>
+                  </>
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Palier 2 — L'IDENTITÉ. Pré-rempli depuis le nom du PDF affiché
+              juste au-dessus dans la puce : c'est une correction, pas une
+              décision, donc il passe après la carte. */}
           <div className="field">
             <label className="field-label" htmlFor="quiz-title">
               Titre du quiz
@@ -605,109 +685,116 @@ function UploadPDF({ onQuizGenerated }) {
             />
           </div>
 
-          <div className="field">
-            <div className="field-row">
-              <span className="field-label" id="qcount-label">Nombre de questions</span>
-              {/* Aucune région live ici : les flèches du radiogroup appellent
-                  onChange à CHAQUE appui, une région polie empilerait autant
-                  d'annonces (« ≈ 5 min », « ≈ 8 min »…) par-dessus l'annonce de
-                  focus de chaque option. L'estimation est exposée par le
-                  aria-describedby que RadioGroup pose sur l'option focalisable,
-                  lue à l'entrée du focus dans le groupe. */}
-              <span className="dropzone-meta" id="qcount-est">
-                ≈ {estMinutes} min
+          {/* Palier 3 — LE TIROIR. Le panneau est TOUJOURS rendu, seul `hidden`
+              bascule : `aria-controls` doit désigner un élément existant dans
+              les deux états, et les deux radiogroups qu'il contient ne doivent
+              jamais être démontés. Ne pas remplacer par un rendu conditionnel. */}
+          <div className="advanced">
+            {/* type="button" IMPÉRATIF : dans un <form>, un <button> sans type
+                soumet le formulaire au clic. */}
+            <button
+              type="button"
+              className={`disclosure ${diffusionPersonnalisee ? 'is-custom' : ''}`}
+              aria-expanded={diffusionOuverte}
+              aria-controls="adv-panel"
+              onClick={() => setDiffusionOuverte((o) => !o)}
+            >
+              <span className="disclosure-label">Diffusion du lien</span>
+              {/* Le résumé vit DANS le bouton : replier n'efface donc aucune
+                  information, ni à l'œil ni dans le nom accessible. Jamais de
+                  aria-live ici — c'est du texte inerte, et le changement est
+                  déjà annoncé par le radio qui le provoque. */}
+              <span className="disclosure-values">
+                {resumeDiffusion.map((r, i) => (
+                  <Fragment key={r}>
+                    {i > 0 && (
+                      <span className="disclosure-sep" aria-hidden="true">
+                        ·
+                      </span>
+                    )}
+                    {r}
+                  </Fragment>
+                ))}
               </span>
+              <Icon name="chevronDown" size={16} className="disclosure-chevron" />
+            </button>
+
+            <div id="adv-panel" className="adv-panel" hidden={!diffusionOuverte}>
+              <div className="field">
+                <span className="field-label" id="attempts-label">
+                  Tentatives par stagiaire
+                </span>
+                <RadioGroup
+                  className="choices"
+                  labelledBy="attempts-label"
+                  options={ATTEMPT_OPTIONS}
+                  value={singleAttempt}
+                  onChange={setSingleAttempt}
+                  optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
+                  renderOption={(opt) => (
+                    <>
+                      <span className="choice-dot" />
+                      <span className="choice-label">{opt.label}</span>
+                      <span className="choice-desc">{opt.desc}</span>
+                    </>
+                  )}
+                />
+              </div>
+
+              <div className="field">
+                <span className="field-label" id="expiry-label">
+                  Durée de validité du lien
+                </span>
+                <RadioGroup
+                  className="segments segments--3"
+                  labelledBy="expiry-label"
+                  describedBy="expiry-help"
+                  options={EXPIRY_OPTIONS}
+                  value={expiresInHours}
+                  onChange={setExpiresInHours}
+                  optionClassName={(opt, checked) =>
+                    `segment segment--text ${checked ? 'is-active' : ''}`
+                  }
+                />
+                {/* Enfant IMMÉDIAT du champ qu'il décrit : la position visuelle
+                    et le lien aria-describedby désignent enfin le même contrôle. */}
+                <span className="dropzone-meta" id="expiry-help">
+                  Passé ce délai le lien ne fonctionne plus. Vous pourrez aussi fermer le quiz à
+                  la main.
+                </span>
+              </div>
             </div>
-            <RadioGroup
-              className="segments"
-              labelledBy="qcount-label"
-              describedBy="qcount-est"
-              options={QUESTION_OPTIONS}
-              value={numQuestions}
-              onChange={setNumQuestions}
-              optionClassName={(opt, checked) => `segment ${checked ? 'is-active' : ''}`}
-            />
-          </div>
-
-          <div className="field">
-            <span className="field-label" id="level-label">Niveau</span>
-            <RadioGroup
-              className="choices"
-              labelledBy="level-label"
-              options={DIFFICULTY_OPTIONS}
-              value={difficulty}
-              onChange={setDifficulty}
-              optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
-              renderOption={(opt) => (
-                <>
-                  <span className="choice-dot" />
-                  <span className="choice-label">{opt.label}</span>
-                  <span className="choice-desc">{opt.desc}</span>
-                </>
-              )}
-            />
-          </div>
-
-          <div className="field">
-            <span className="field-label" id="diffusion-label">Diffusion</span>
-            <RadioGroup
-              className="choices"
-              labelledBy="diffusion-label"
-              options={ATTEMPT_OPTIONS}
-              value={singleAttempt}
-              onChange={setSingleAttempt}
-              optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
-              renderOption={(opt) => (
-                <>
-                  <span className="choice-dot" />
-                  <span className="choice-label">{opt.label}</span>
-                  <span className="choice-desc">{opt.desc}</span>
-                </>
-              )}
-            />
-            <RadioGroup
-              className="segments segments--3"
-              style={{ marginTop: 4 }}
-              label="Durée de validité du lien"
-              describedBy="expiry-help"
-              options={EXPIRY_OPTIONS}
-              value={expiresInHours}
-              onChange={setExpiresInHours}
-              optionClassName={(opt, checked) =>
-                `segment segment--text ${checked ? 'is-active' : ''}`
-              }
-            />
-            <span className="dropzone-meta" id="expiry-help">
-              Passé ce délai le lien ne fonctionne plus. Vous pourrez aussi fermer le quiz à la
-              main.
-            </span>
           </div>
         </>
       )}
 
-      {/* Conteneur monté en permanence : c'est lui qui porte role="alert",
-          pas le message. Une alerte qui apparaît en même temps que son texte
-          n'est pas annoncée de façon fiable ; ici la région préexiste et seul
-          son contenu change — d'où `announcedError`, retardé d'un commit, qui
-          garantit cette séquence même au remontage du formulaire. Le message
-          n'est PAS focalisable : il est annoncé par la région et par elle
-          seule, la reprise de focus vise le bouton d'envoi juste en dessous.
-          Garder la forme ternaire : `{announcedError.texte && …}` avec une
-          chaîne vide peut laisser un nœud texte vide et casser :empty.
-          La `key` porte le numéro d'occurrence : à refus identique répété, elle
-          change, React remplace le <p> au lieu de le laisser tel quel, et la
-          région — elle, toujours montée — voit bien son contenu muter. Sans
-          elle, le second refus identique n'est annoncé nulle part. */}
-      <div className="error-slot" role="alert" aria-atomic="true">
-        {announcedError.texte ? (
-          <p className="error-msg" key={announcedError.n}>
-            <Icon name="info" size={16} width={1.8} />
-            <span>{announcedError.texte}</span>
-          </p>
-        ) : null}
-      </div>
+      {/* La barre est rendue INCONDITIONNELLEMENT, hors du `{file && …}` : la
+          conditionner démonterait le conteneur role="alert" ci-dessous, dont
+          tout le fonctionnement repose sur un montage permanent. C'est le
+          « raffinement » à ne jamais ajouter. */}
+      <div className="sticky-actions sticky-actions--stacked">
+        {/* Conteneur monté en permanence : c'est lui qui porte role="alert",
+            pas le message. Une alerte qui apparaît en même temps que son texte
+            n'est pas annoncée de façon fiable ; ici la région préexiste et seul
+            son contenu change — d'où `announcedError`, retardé d'un commit, qui
+            garantit cette séquence même au remontage du formulaire. Le message
+            n'est PAS focalisable : il est annoncé par la région et par elle
+            seule, la reprise de focus vise le bouton d'envoi juste en dessous.
+            Garder la forme ternaire : `{announcedError.texte && …}` avec une
+            chaîne vide peut laisser un nœud texte vide et casser :empty.
+            La `key` porte le numéro d'occurrence : à refus identique répété, elle
+            change, React remplace le <p> au lieu de le laisser tel quel, et la
+            région — elle, toujours montée — voit bien son contenu muter. Sans
+            elle, le second refus identique n'est annoncé nulle part. */}
+        <div className="error-slot" role="alert" aria-atomic="true">
+          {announcedError.texte ? (
+            <p className="error-msg" key={announcedError.n}>
+              <Icon name="info" size={16} width={1.8} />
+              <span>{announcedError.texte}</span>
+            </p>
+          ) : null}
+        </div>
 
-      <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
         {/* Bouton volontairement TOUJOURS actif : un bouton désactivé n'est pas
             atteignable au clavier, donc sa raison d'être indisponible n'est
             lisible nulle part. La contrainte est vérifiée au clic et rendue
