@@ -2137,11 +2137,19 @@
 }
 
 /* :is(h2, h3) — voir .sheet-head : même dialogue, même promotion possible. */
+/* La couleur n'est PAS optionnelle ici. .modal est rendue à l'intérieur de
+   .quiz (Quiz.jsx), qui pose color: var(--on-ink) — blanc — tandis que .modal
+   pose un fond blanc. Sans cette déclaration le titre héritait du blanc et se
+   retrouvait à 1,00:1 : « Envoyer vos réponses ? » était littéralement
+   invisible, sur le dernier écran que voit un participant avant d'envoyer.
+   Le paragraphe voisin, lui, déclarait bien sa couleur — d'où un défaut qui
+   passait inaperçu, la modale paraissant simplement commencer par un blanc. */
 .modal :is(h2, h3) {
   font-family: var(--serif);
   font-size: var(--d-dialog);
   font-weight: 400;
   line-height: var(--lh-display);
+  color: var(--text);
 }
 
 .modal p {
