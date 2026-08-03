@@ -231,27 +231,57 @@ function ReviewQuestions({
                 {q.options.map((option, optIdx) => {
                   const letter = LETTERS[optIdx];
                   const isAnswer = q.answer === letter;
+                  const pastille = (
+                    <span className="q-option-dot">
+                      {isAnswer && <Icon name="check" size={13} width={2.6} />}
+                    </span>
+                  );
+
+                  // En édition, la ligne porte DEUX commandes : choisir la bonne
+                  // réponse et corriger son texte. Elles doivent être frères.
+                  // Le modèle de contenu de <button> interdit tout descendant
+                  // interactif : le champ imbriqué qui existait ici n'était, selon
+                  // le moteur, ni atteignable au Tab ni focalisable au clic — d'où
+                  // le stopPropagation qui tentait de rattraper le pointeur. Le
+                  // nom accessible du bouton, calculé depuis son contenu, aspirait
+                  // en prime la valeur du champ.
+                  if (isEditing) {
+                    return (
+                      <div
+                        key={optIdx}
+                        className={`q-option q-option--edit ${isAnswer ? 'is-answer' : ''}`}
+                      >
+                        <button
+                          type="button"
+                          className="q-option-pick"
+                          onClick={() => update(idx, { answer: letter })}
+                          aria-pressed={isAnswer}
+                          aria-label={`Définir l’option ${letter} comme bonne réponse`}
+                          title="Définir comme bonne réponse"
+                        >
+                          {pastille}
+                        </button>
+                        <input
+                          className="q-option-input"
+                          value={stripLetter(option)}
+                          onChange={(e) => setOption(idx, optIdx, e.target.value)}
+                          aria-label={`Texte de l’option ${letter}`}
+                        />
+                      </div>
+                    );
+                  }
+
                   return (
                     <button
                       key={optIdx}
                       type="button"
                       className={`q-option ${isAnswer ? 'is-answer' : ''}`}
                       onClick={() => update(idx, { answer: letter })}
+                      aria-pressed={isAnswer}
                       title="Définir comme bonne réponse"
                     >
-                      <span className="q-option-dot">
-                        {isAnswer && <Icon name="check" size={13} width={2.6} />}
-                      </span>
-                      {isEditing ? (
-                        <input
-                          className="q-option-input"
-                          value={stripLetter(option)}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setOption(idx, optIdx, e.target.value)}
-                        />
-                      ) : (
-                        <span>{stripLetter(option)}</span>
-                      )}
+                      {pastille}
+                      <span>{stripLetter(option)}</span>
                     </button>
                   );
                 })}

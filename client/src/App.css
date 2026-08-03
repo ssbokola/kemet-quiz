@@ -1021,7 +1021,38 @@
   cursor: pointer;
 }
 
-.q-option:hover {
+/* En édition la ligne n'est plus un bouton mais un simple conteneur : ni curseur
+   de clic ni survol, qui promettraient une commande qui n'existe pas à cet
+   endroit. Les deux vraies commandes sont à l'intérieur. */
+.q-option:not(.q-option--edit):hover {
+  border-color: var(--gold-line);
+}
+
+.q-option--edit {
+  cursor: default;
+}
+
+/* Enveloppe cliquable de la pastille « bonne réponse ». Les marges négatives
+   ramènent son emprise à celle de la pastille seule (25 − 2×5 = 15 px), pour que
+   la ligne s'aligne exactement comme en lecture, tout en offrant une cible de
+   25 px au doigt et à la souris. */
+.q-option-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  margin: -5px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.q-option-pick:hover .q-option-dot {
   border-color: var(--gold-line);
 }
 
