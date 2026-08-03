@@ -110,7 +110,7 @@
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .h-display {
@@ -173,12 +173,12 @@
 
 .btn--ghost {
   background: #fff;
-  border: 1.5px solid var(--line-strong);
+  border: 1.5px solid var(--line-control);
   color: var(--text-2);
 }
 
 .btn--ghost:hover:not(:disabled) {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
   color: var(--gold-deep);
   background: #fdfbf6;
 }
@@ -208,7 +208,7 @@
 .btn:disabled {
   cursor: not-allowed;
   background: var(--paper-2);
-  color: var(--text-4);
+  color: var(--text-3);
   box-shadow: none;
   border-color: var(--line);
 }
@@ -217,7 +217,7 @@
   text-align: center;
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .btn-spinner {
@@ -273,26 +273,60 @@
   gap: 12px;
 }
 
+/* AUCUN champ de saisie ne déclare « outline: none ». App.css est chargé APRÈS
+   index.css : à specificité égale (0-1-0) un « outline: none » local effacerait
+   l'anneau global :focus-visible, seul indicateur mesurable dont disposent ces
+   champs. Le halo et le changement de bordure ci-dessous ne peuvent pas le
+   remplacer : halo rgba(200,164,90,.16) composé = 1,13:1 sur #fff (1,11:1 sur
+   --paper-3) et --line-control → --gold-line = 1,19:1, très loin des 3:1 exigés
+   par WCAG 1.4.11. L'anneau, lui, donne 4,47:1 sur #fff, 3,89:1 sur --paper-2 et
+   3,72:1 sur --paper-3. Il n'est pas non plus redéclaré ici : il doit rester
+   piloté par --focus-ring, que .quiz et .modal resurchargent.
+   Redondance visuelle : à outline-offset 2px l'anneau tombe DANS le halo, dont
+   le contraste (1,13:1) le rend imperceptible — pas de double anneau visible. */
 .input {
   width: 100%;
   min-height: 54px;
   padding: 0 16px;
   background: #fff;
-  border: 1.5px solid var(--line-strong);
+  border: 1.5px solid var(--line-control);
   border-radius: var(--r-md);
   font-size: 16px;
   color: var(--text);
-  outline: none;
   transition: border-color 0.18s, box-shadow 0.18s;
 }
 
 .input::placeholder {
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .input:focus {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
   box-shadow: 0 0 0 3px rgba(200, 164, 90, 0.16);
+}
+
+/* Le conteneur role="alert" est monté EN PERMANENCE : une région live ajoutée
+   au DOM après coup n'est pas annoncée. Enfant direct de .stack (gap: 22px), il
+   consommerait une gouttière entière à vide.
+   display: none réglait la gouttière mais retirait AUSSI la région de l'arbre
+   d'accessibilité tant qu'elle est vide : elle passait donc d'ABSENTE à
+   PRÉSENTE-AVEC-TEXTE en un seul commit — exactement le scénario que le montage
+   permanent existe pour éviter. Le motif s'annulait lui-même.
+   On la retire donc du FLUX sans la retirer de l'arbre : un enfant en position
+   absolue n'est pas un flex item et ne consomme aucune gouttière, tout en
+   restant présent et vide dans l'arbre (même technique que .sr-live plus bas).
+   Aucun décalage ni débordement possible : sans top/left/right/bottom la boîte
+   reste à sa position statique — le coin de contenu de la .stack — quel que soit
+   l'ancêtre positionné, et 1×1 en overflow: hidden n'ajoute aucune surface
+   défilable. Dès que le message arrive, :empty ne matche plus : la règle cesse
+   de s'appliquer, l'élément retrouve le flux et l'alerte part.
+   Surtout PAS display: contents : plusieurs moteurs retirent alors l'élément de
+   l'arbre d'accessibilité, ce qui tuerait le role="alert" au moment utile. */
+.error-slot:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }
 
 .error-msg {
@@ -357,12 +391,15 @@
 }
 
 .dropzone {
+  /* Bloc conteneur explicite pour l'input masqué en position absolue : garantit
+     que le navigateur défile jusqu'à la zone quand l'input prend le focus. */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   padding: 40px 24px;
-  border: 1.5px dashed #cdbe91;
+  border: 1.5px dashed var(--gold-line);
   border-radius: 18px;
   background: #fdfbf6;
   text-align: center;
@@ -371,14 +408,45 @@
 }
 
 .dropzone:hover {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
   background: var(--gold-soft);
 }
 
 .dropzone.is-over {
   border-style: solid;
-  border-color: var(--gold);
+  border-color: var(--gold-line);
   background: var(--gold-soft);
+  box-shadow: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
+}
+
+/* Focus clavier : l'input est masqué, c'est le label qui montre l'état.
+   Déclaré APRÈS .is-over pour l'emporter quand les deux sont actifs.
+   --gold-deep (#7a6528) donne 5,46:1 sur #fdfbf6 (repos), 4,89:1 sur
+   --gold-soft (état allumé) et 4,70:1 sur --paper-3, au-dessus des 3:1 exigés
+   par WCAG 2.4.11, contrairement à --gold (1,96:1 sur --paper-3).
+   :focus-within ne distingue PAS l'origine du focus : un simple clic laisserait
+   l'anneau allumé, y compris pendant que la boîte de dialogue native est
+   ouverte. On ne le garde donc qu'en repli, là où :has() n'existe pas
+   (Firefox 101→120 : dvh oui, :has() non), et on cible :has(:focus-visible)
+   partout ailleurs. Écrire le repli en « @supports not » plutôt qu'en remise à
+   zéro évite d'écraser .is-over, qui a la même spécificité (0-2-0). */
+@supports not selector(:has(:focus-visible)) {
+  .dropzone:focus-within {
+    border-style: solid;
+    border-color: var(--gold-deep);
+    background: var(--gold-soft);
+    outline: 2px solid var(--gold-deep);
+    outline-offset: 2px;
+    box-shadow: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
+  }
+}
+
+.dropzone:has(:focus-visible) {
+  border-style: solid;
+  border-color: var(--gold-deep);
+  background: var(--gold-soft);
+  outline: 2px solid var(--gold-deep);
+  outline-offset: 2px;
   box-shadow: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
 }
 
@@ -400,15 +468,33 @@
 
 .dropzone-meta {
   font-size: 11.5px;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
-.file-input {
+/* Masquage accessible : hors du champ visuel MAIS toujours exposé aux lecteurs
+   d'écran — et, pour .file-input, focusable et activable. Ne JAMAIS remettre
+   pointer-events: none ni se contenter d'opacity: 0 : l'un casse l'activation,
+   l'autre laisse un contrôle invisible cliquable. Pas de display: none non plus,
+   qui retirerait le contenu de l'arbre d'accessibilité.
+   Les trois sélecteurs partagent la technique mais pas l'intention :
+   .file-input = contrôle focusable (son anneau :focus-visible est rogné par le
+   clip-path, c'est le label parent qui affiche le focus) ; .sr-live = région
+   live inerte ; .sr-only = texte inerte d'appoint (états d'étape, confirmation
+   de copie…). Le JSX s'appuie sur .sr-only 6 fois : sans cette déclaration ces
+   textes s'affichaient EN CLAIR à côté des libellés visibles. */
+.file-input,
+.sr-live,
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
-  opacity: 0;
-  pointer-events: none;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
 }
 
 /* Fichier retenu */
@@ -462,6 +548,46 @@
   background: rgba(154, 122, 46, 0.22);
 }
 
+/* Déclencheur visible du sélecteur quand un PDF est déjà retenu.
+   position: relative ancre l'input masqué qu'il contient. */
+.file-chip-change {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--gold-deep);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--gold-deep);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.file-chip-change:hover {
+  background: var(--gold-deep);
+  color: #fff;
+}
+
+/* Même raisonnement que .dropzone : l'anneau ne s'allume qu'au clavier, le
+   repli :focus-within ne sert que là où :has() manque. --gold-deep sur
+   --gold-soft (fond du .file-chip) = 4,89:1, au-dessus des 3:1 de WCAG 2.4.11. */
+@supports not selector(:has(:focus-visible)) {
+  .file-chip-change:focus-within {
+    outline: 2px solid var(--gold-deep);
+    outline-offset: 2px;
+  }
+}
+
+.file-chip-change:has(:focus-visible) {
+  outline: 2px solid var(--gold-deep);
+  outline-offset: 2px;
+}
+
 /* Segments (nombre de questions) */
 .segments {
   display: grid;
@@ -480,7 +606,7 @@
 
 .segment {
   min-height: 48px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   border-radius: 12px;
   background: #fff;
   font-size: 15px;
@@ -491,7 +617,7 @@
 }
 
 .segment:hover {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
   color: var(--gold-deep);
 }
 
@@ -520,7 +646,7 @@
   gap: 12px;
   min-height: 52px;
   padding: 10px 15px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   border-radius: 12px;
   background: #fff;
   text-align: left;
@@ -529,11 +655,11 @@
 }
 
 .choice:hover {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
 }
 
 .choice.is-active {
-  border: 1.5px solid var(--gold);
+  border: 1.5px solid var(--gold-line);
   background: #fdfbf6;
 }
 
@@ -541,7 +667,7 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 1.5px solid #cfc8bb;
+  border: 1.5px solid var(--line-control);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -582,14 +708,14 @@
   width: 100%;
   padding: 14px 16px;
   background: #fff;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   text-align: left;
   cursor: pointer;
 }
 
 .recent-row:hover {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
 }
 
 .recent-row-body {
@@ -628,7 +754,10 @@
   text-align: center;
 }
 
-.progress-head h2 {
+/* :is(h1, h2) — le titre de l'écran est passé de h2 à h1 (l'écran n'avait aucun
+   niveau 1). Spécificité inchangée : :is() prend celle de son argument le plus
+   spécifique, soit un type, donc 0-1-1 comme « .progress-head h2 ». */
+.progress-head :is(h1, h2) {
   font-family: var(--serif);
   font-size: 27px;
   font-weight: 400;
@@ -641,11 +770,15 @@
   max-width: 32ch;
 }
 
+/* L'arc porte SEUL la progression visuelle : il lui faut 3:1 (WCAG 1.4.11).
+   --gold n'y arrivait pas (1,91:1 sur l'anneau #efe7d5, 1,96:1 sur --paper-3).
+   --gold-line donne 3,63:1 sur l'anneau et 3,72:1 sur --paper-3. Le .spinner
+   n'est rendu que sur fond clair (écran de fabrication). */
 .spinner {
   width: 46px;
   height: 46px;
   border: 3px solid #efe7d5;
-  border-top-color: var(--gold);
+  border-top-color: var(--gold-line);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
 }
@@ -692,12 +825,36 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 1.5px dashed #cfc8bb;
+  border: 1.5px dashed var(--line-control);
   flex-shrink: 0;
 }
 
+/* « À venir » : affaiblissement COLORÉ, jamais par opacity. L'opacité du
+   conteneur composait tout le bloc sur --paper-3 et faisait tomber du texte
+   d'information sous le seuil : .step-meta 2,39:1, .step-name 3,97:1,
+   .step-bullet 1,96:1 — aucune exemption WCAG ne s'y applique.
+   Mais fermer ce défaut en repeignant le seul CONTENU avait effacé la
+   hiérarchie de la carte : « à venir » et « terminée » partageaient le même
+   fond (#fff) et la même bordure (--line), et .step-name portait --text-3,
+   c'est-à-dire la couleur employée ailleurs pour une MÉTADONNÉE. Le contenant
+   reprend donc sa part de l'affaiblissement : fond --paper au lieu de #fff, et
+   le nom remonte d'un cran à --text-2.
+   Sur --paper : nom 8,43:1, méta 4,58:1 (12px, seuil 4,5:1), pastille 3,61:1.
+   --paper-2 aurait creusé davantage le fond (1,15:1 face à #fff au lieu de
+   1,04:1) mais fait tomber la méta à 4,16:1 : c'est elle qui fixe le plancher.
+   Les trois états redeviennent lisibles d'un coup d'œil : « terminée » fond
+   blanc, nom --text (16,67:1) et pastille pleine ; « en cours » fond doré et
+   nom #4a3a12 (9,54:1) ; « à venir » fond papier, nom gris, pastille tiretée. */
 .step.is-todo {
-  opacity: 0.55;
+  background: var(--paper);
+}
+
+.step.is-todo .step-name {
+  color: var(--text-2);
+}
+
+.step.is-todo .step-meta {
+  color: #797263;
 }
 
 .step.is-doing {
@@ -726,10 +883,12 @@
   overflow: hidden;
 }
 
+/* Le remplissage se lit contre la piste --line, pas contre la page :
+   --gold n'y donnait que 1,83:1, --gold-line donne 3,46:1 (WCAG 1.4.11). */
 .bar-fill {
   height: 100%;
   border-radius: 3px;
-  background: var(--gold);
+  background: var(--gold-line);
   transition: width 0.4s ease;
 }
 
@@ -737,7 +896,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 11.5px;
-  color: var(--text-4);
+  color: var(--text-3);
   margin-top: 8px;
 }
 
@@ -749,7 +908,10 @@
   margin-bottom: 18px;
 }
 
-.review-head h2 {
+/* :is(h1, h2) — même précaution que .progress-head : le titre de l'écran de
+   relecture passe de h2 à h1 (l'écran n'avait aucun niveau 1) et la règle doit
+   suivre, sinon il retombe sur le défaut navigateur (2em gras sans-serif). */
+.review-head :is(h1, h2) {
   font-size: 17px;
   font-weight: 600;
 }
@@ -775,7 +937,7 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .q-card-tools {
@@ -789,7 +951,7 @@
   gap: 5px;
   min-height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: 8px;
   background: #fff;
   font-size: 11.5px;
@@ -799,7 +961,7 @@
 }
 
 .tool-btn:hover:not(:disabled) {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
   color: var(--gold-deep);
 }
 
@@ -815,16 +977,25 @@
   text-wrap: pretty;
 }
 
+/* Le contour --gold-line est permanent : c'est l'affordance « zone éditable »,
+   pas un état. Le halo, lui, signale le champ EN COURS d'édition — porté par la
+   règle de BASE, il allumait ce signal en continu sur toutes les questions
+   ouvertes. Il rejoint donc :focus, par symétrie avec .input. Comme sur .input
+   il ne vaut que 1,13:1 composé sur #fff : c'est un renfort décoratif, jamais
+   l'indicateur mesurable — celui-ci reste l'anneau global :focus-visible. */
 .q-card-input {
   width: 100%;
   min-height: 76px;
   padding: 12px 14px;
-  border: 1.5px solid var(--gold);
+  border: 1.5px solid var(--gold-line);
   border-radius: 12px;
   font-size: 14.5px;
   line-height: 1.55;
   resize: vertical;
-  outline: none;
+  transition: box-shadow 0.18s;
+}
+
+.q-card-input:focus {
   box-shadow: 0 0 0 3px rgba(200, 164, 90, 0.16);
 }
 
@@ -840,7 +1011,7 @@
   gap: 9px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: 10px;
   background: #fff;
   font-size: 13.5px;
@@ -851,20 +1022,23 @@
 }
 
 .q-option:hover {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
 }
 
 .q-option-dot {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  border: 1.5px solid #ded8cd;
+  border: 1.5px solid var(--line-control);
   flex-shrink: 0;
 }
 
+/* Le contour de l'état ne doit pas être plus faible que celui du repos
+   (--line-control, 3,76:1 sur le blanc de la .q-card) : --ok-bg n'y donnait que
+   1,16:1, --ok donne 5,00:1 contre la carte et 4,30:1 contre son propre fond. */
 .q-option.is-answer {
   background: var(--ok-bg);
-  border-color: var(--ok-bg);
+  border-color: var(--ok);
   color: var(--ok-text);
   font-weight: 600;
 }
@@ -881,14 +1055,13 @@
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-control);
   border-radius: 8px;
   font-size: 13.5px;
-  outline: none;
 }
 
 .q-option-input:focus {
-  border-color: var(--gold);
+  border-color: var(--gold-line);
 }
 
 .sticky-actions {
@@ -932,8 +1105,13 @@
   cursor: pointer;
 }
 
+/* Le survol est un état de fonctionnement normal, soumis à WCAG 1.4.3 : garder
+   --err sur --err-bg faisait tomber le libellé (12,5px / 600) à 4,24:1. La
+   couleur bascule donc avec le fond — --err-text sur --err-bg = 6,63:1, contre
+   5,05:1 pour --err sur le blanc de la .meta-row au repos. */
 .btn-danger-link:hover {
   background: var(--err-bg);
+  color: var(--err-text);
 }
 
 .notice {
@@ -955,12 +1133,14 @@
   color: var(--gold-deep);
 }
 
+/* 11,5px : aucune exemption « grand texte » (seuil 18,66px). L'alpha 0,35 ne
+   donnait que 3,23:1 sur --ink-deep ; 0,55 donne 6,12:1. */
 .kbd-hint {
   display: none;
   align-items: center;
   gap: 8px;
   font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .kbd {
@@ -1027,12 +1207,11 @@
   min-height: 50px;
   padding: 0 14px;
   background: var(--paper-2);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-control);
   border-radius: 12px;
   font-family: var(--mono);
   font-size: 12.5px;
   color: var(--text-2);
-  outline: none;
 }
 
 .btn-copy {
@@ -1042,7 +1221,7 @@
   gap: 7px;
   min-height: 50px;
   padding: 0 16px;
-  border: 1.5px solid var(--gold);
+  border: 1.5px solid var(--gold-line);
   border-radius: 12px;
   background: #fff;
   font-size: 14px;
@@ -1095,6 +1274,10 @@
 
 /* ---------- Écran de quiz : thème ENCRE & OR ---------- */
 .quiz {
+  /* Anneau de focus de l'univers encre : --gold-light au lieu de --gold-line.
+     12,89:1 sur --ink-deep (#17161a) et 11,79:1 sur #201e26 (fond .sheet).
+     Hérité par .sheet, .quiz-foot, .recap ; réinitialisé sur .modal (fond blanc). */
+  --focus-ring: var(--gold-light);
   position: relative;
   min-height: 100dvh;
   display: flex;
@@ -1137,27 +1320,46 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* align-items: center — les ticks ont une hauteur explicite, donc « stretch »
+   ne s'applique pas : sans ce centrage, les barres de 3px se caleraient en haut
+   du rail porté à 5px par le tick courant (voir plus bas). */
 .quiz-ticks {
   display: flex;
+  align-items: center;
   gap: 4px;
 }
 
+/* Chaque tick est un BOUTON, et le seul porteur visuel de l'avancement : les
+   trois états doivent tenir 3:1 sur --ink-deep. Le repos n'a pas de bordure,
+   c'est son aplat qui fait office de contour, d'où --line-control-ink en
+   remplissage. 1,51:1 → 3,83:1.
+   Mais rendre le repos conforme rapproche mécaniquement les deux autres états,
+   qui se lisent CONTRE lui et non contre le fond : « répondu » en --gold était
+   tombé de 5,05:1 à 2,00:1 face au repos, « courant » en #fff de 11,89:1 à
+   4,71:1. Conformité et lisibilité d'état sont donc découplées :
+   — « répondu » quitte --gold pour --gold-light : 3,37:1 face au repos (et
+     12,89:1 sur --ink-deep), l'écart d'état redevient franc ;
+   — « courant » garde #fff (4,71:1 face au repos) et gagne un marqueur NON
+     chromatique, la hauteur : 5px contre 3px. Il est indispensable, car #fff ne
+     vaut plus que 1,40:1 face au --gold-light de « répondu » (2,36:1 face à
+     --gold) : c'est la forme, pas la teinte, qui sépare ces deux-là. */
 .tick {
   flex: 1;
   height: 3px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--line-control-ink);
   border: 0;
   padding: 0;
   cursor: pointer;
-  transition: background 0.25s;
+  transition: background 0.25s, height 0.25s;
 }
 
 .tick.is-answered {
-  background: var(--gold);
+  background: var(--gold-light);
 }
 
 .tick.is-current {
+  height: 5px;
   background: #fff;
 }
 
@@ -1185,6 +1387,26 @@
   gap: 9px;
 }
 
+/* Contour : 1,49:1 → 3,73:1 sur son propre aplat (4,22:1 sur --ink-deep).
+   Survol : 2,44:1 → 6,39:1, et le changement d'état reste perceptible (1,94:1
+   entre les deux contours composés).
+   C'est l'écran le plus fréquenté : la sélection ne peut pas y reposer sur la
+   seule teinte du contour. Le repos étant monté à .40, --gold-line-ink n'en
+   était plus séparé que de 1,81:1 (5,13:1 avant les lots) et surtout de 1,07:1
+   du contour de SURVOL — survoler une option non choisie produisait un liseré
+   aussi fort que celui de l'option choisie. Trois axes indépendants, dont aucun
+   ne porte l'état à lui seul (voir .opt.is-selected plus bas) :
+   — teinte et valeur : --gold-light, 3,05:1 face au contour de repos et 1,58:1
+     face au contour de survol, mais dans un registre chromatique que les
+     contours neutres n'occupent jamais ;
+   — épaisseur : 1,5px contre 1px, padding compensé de 0,5px pour que le texte
+     ne se déplace pas d'un état à l'autre ;
+   — aplat : rgba(200,164,90,.28) au lieu de .16, soit 1,51:1 face à l'aplat de
+     repos et 1,34:1 face à celui de survol (contre 1,16:1 et 1,03:1 avant).
+   S'y ajoutent la graisse 600, le texte #fff (10,50:1 sur le nouvel aplat), la
+   pastille .opt-letter qui devient un disque doré plein (4,46:1 face à l'aplat)
+   et l'icône .opt-check (--gold-light, 7,51:1). Conformité 1.4.11 du contour
+   sélectionné : 7,51:1 sur son propre aplat. */
 .opt {
   display: flex;
   align-items: center;
@@ -1193,7 +1415,7 @@
   min-height: 60px;
   padding: 12px 16px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--line-control-ink);
   border-radius: var(--r-md);
   color: rgba(255, 255, 255, 0.88);
   font-size: 15px;
@@ -1205,13 +1427,24 @@
 
 .opt:hover {
   background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--line-control-ink-hover);
 }
 
 .opt:active {
   transform: scale(0.99);
 }
 
+/* Anneau RETIRÉ, et non remonté. Il n'identifiait aucun composant — le contrôle,
+   c'est .opt et son contour — et à rgba(255,255,255,.18) il ne valait que 1,79:1
+   sur l'aplat de .opt, soit 2,08:1 SOUS le contour de son propre parent depuis
+   que celui-ci est passé à .40 : l'échelle conteneur → contenu était inversée.
+   Le remonter au-dessus du parent aurait fermé l'inversion mais rétréci l'écart
+   repos → sélectionné de la pastille, qui valait 3,77:1 avant les lots (anneau
+   .18 → disque doré) ; sans anneau, ce même écart devient un changement de
+   FORME — rien → disque plein, 4,46:1 face à l'aplat sélectionné — donc plus
+   large qu'avant les lots au lieu de plus étroit. La lettre reste seule porteuse
+   d'information : 6,57:1 au repos et 6,08:1 au survol, au-dessus des 4,5:1 dus
+   à 12,5px/700, et --ink-deep sur le disque doré donne 7,64:1. */
 .opt-letter {
   display: inline-flex;
   align-items: center;
@@ -1219,7 +1452,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 0;
   font-size: 12.5px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.6);
@@ -1230,16 +1463,19 @@
   flex: 1;
 }
 
+/* Déclaré APRÈS .opt:hover, à spécificité égale (0-2-0) : survoler une option
+   déjà choisie ne remplace donc pas son liseré doré par le liseré neutre. */
 .opt.is-selected {
-  background: rgba(200, 164, 90, 0.16);
-  border-color: var(--gold);
+  padding: 11.5px 15.5px;
+  background: rgba(200, 164, 90, 0.28);
+  border-width: 1.5px;
+  border-color: var(--gold-light);
   color: #fff;
   font-weight: 600;
 }
 
 .opt.is-selected .opt-letter {
   background: var(--gold);
-  border-color: var(--gold);
   color: var(--ink-deep);
 }
 
@@ -1266,7 +1502,7 @@
   gap: 8px;
   min-height: 52px;
   padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--line-control-ink);
   border-radius: var(--r-md);
   background: none;
   color: rgba(255, 255, 255, 0.75);
@@ -1276,8 +1512,10 @@
   transition: all 0.18s;
 }
 
+/* Le survol doit rester PLUS fort que le repos : l'ancienne valeur (.40) est
+   devenue celle du repos, d'où la bascule sur le token de survol. 3,83 → 7,45:1. */
 .btn-ink-ghost:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: var(--line-control-ink-hover);
   color: #fff;
 }
 
@@ -1383,10 +1621,13 @@
   gap: 8px;
 }
 
+/* Contour : 1,65:1 → 3,73:1 sur son propre aplat (4,22:1 sur --ink-deep).
+   L'aplat doré de .is-answered est la surface la plus exigeante du thème :
+   rgba(200,164,90,.5) n'y donnait que 2,51:1, --gold-line-ink donne 5,55:1. */
 .recap-cell {
   min-height: 48px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--line-control-ink);
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.55);
   font-size: 13px;
@@ -1397,16 +1638,22 @@
 }
 
 .recap-cell:hover {
-  border-color: var(--gold);
+  border-color: var(--gold-line-ink);
   color: #fff;
 }
 
 .recap-cell.is-answered {
   background: rgba(200, 164, 90, 0.18);
-  border-color: rgba(200, 164, 90, 0.5);
+  border-color: var(--gold-line-ink);
   color: var(--gold-light);
 }
 
+/* Panneau passif, pas un contrôle : son contour n'est soumis à aucun seuil.
+   Mais à rgba(255,255,255,.1) il ne valait que 1,36:1 sur son propre aplat,
+   autant dire rien, alors qu'il enferme des puces à contour doré plein
+   (--gold-line-ink, 6,74:1) : l'échelle du conteneur vers le contenu ne montait
+   plus, elle sautait. .22 le rend perceptible (2,06:1) tout en le laissant
+   nettement sous ses puces, et sous le palier .40 réservé aux contrôles. */
 .recap-missing {
   display: flex;
   flex-direction: column;
@@ -1414,7 +1661,7 @@
   padding: 16px;
   border-radius: var(--r-md);
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .recap-missing-title {
@@ -1429,11 +1676,13 @@
   flex-wrap: wrap;
 }
 
+/* Fond transparent : le contour se lit sur l'aplat de .recap-missing.
+   rgba(200,164,90,.45) n'y donnait que 2,47:1, --gold-line-ink donne 6,74:1. */
 .recap-missing-chip {
   min-height: 36px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(200, 164, 90, 0.45);
+  border: 1px solid var(--gold-line-ink);
   background: none;
   color: var(--gold-light);
   font-size: 13px;
@@ -1494,15 +1743,22 @@
   color: #fff;
 }
 
+/* Contrôle oublié par le balayage du thème encre : la plaque
+   rgba(255,255,255,.08) ne valait que 1,27:1 sur le fond de la .sheet, loin des
+   3:1 de WCAG 1.4.11, et rien d'autre ne délimitait le bouton. Elle cède la
+   place au contour de contrôle du thème, comme sur .sheet-row juste en dessous :
+   3,76:1 sur #201e26 — le 4,06:1 annoncé pour .sheet-row se compose, lui, sur
+   l'aplat propre de la ligne, que ce bouton n'a pas.
+   box-sizing: border-box (réinitialisation globale) : le carré reste à 36px. */
 .sheet-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 0;
+  border: 1px solid var(--line-control-ink);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: none;
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
 }
@@ -1513,6 +1769,8 @@
   gap: 6px;
 }
 
+/* Contour sur le fond de la .sheet (#201e26) : 1,43:1 → 4,06:1 (3,63:1 sur son
+   propre aplat #29272f). Survol 2,45:1 → 7,36:1. */
 .sheet-row {
   display: flex;
   align-items: center;
@@ -1520,7 +1778,7 @@
   width: 100%;
   min-height: 52px;
   padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line-control-ink);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.8);
@@ -1531,19 +1789,45 @@
 }
 
 .sheet-row:hover {
-  border-color: rgba(255, 255, 255, 0.24);
+  border-color: var(--line-control-ink-hover);
 }
 
+/* Question courante. Le contour des lignes voisines étant passé de
+   rgba(255,255,255,.08) à .40, un simple changement de teinte ne suffit plus :
+   --gold-line-ink n'en est séparé que de 1,72:1 (4,89:1 avant les lots) et
+   --gold-light de 2,91:1, sous les 3:1 visés entre deux états voisins. Et rien
+   ne prenait le relais : .sheet-row.is-answered .sheet-row-state code un état
+   DIFFÉRENT. Trois axes plutôt qu'un :
+   — teinte : --gold-light, hors du registre neutre des contours voisins, et
+     8,11:1 sur son propre aplat (conformité 1.4.11 largement tenue) ;
+   — épaisseur : 2px contre 1px, padding compensé d'1px pour que le contenu ne
+     se déplace pas d'un état à l'autre (box-sizing: border-box, la ligne garde
+     exactement la même emprise) ;
+   — aplat doré : 1,30:1 face à l'aplat voisin, contre 1,11:1 pour le
+     rgba(200,164,90,.12) envisagé au départ.
+   L'alpha .20 est le plafond : à .24 le .sheet-row-num tombe à 4,42:1, sous les
+   4,5:1 dus à 12px/700 ; à .20 il tient 4,68:1 et le texte de la ligne 7,92:1.
+   #fff aurait donné 4,06:1 face au contour voisin, mais dans la MÊME famille
+   chromatique que lui — une variation de valeur seule, c'est-à-dire exactement
+   l'axe unique dont ce correctif cherche à sortir. */
 .sheet-row.is-current {
-  border-color: var(--gold);
+  padding: 9px 13px;
+  border-width: 2px;
+  border-color: var(--gold-light);
+  background: rgba(200, 164, 90, 0.2);
 }
 
+/* 12px / 700 : sous le seuil « grand texte gras » (18,66px), donc 4,5:1 exigés.
+   L'alpha 0,40 ne donnait que 3,63:1 sur le fond composé de la ligne (#29272f) ;
+   0,55 donne 5,52:1, et la ligne reste hiérarchisée sous son propre texte
+   (rgba(255,255,255,.8) = 9,94:1). Pire cas : l'aplat doré de
+   .sheet-row.is-current, 4,68:1 — c'est lui qui y plafonne l'alpha à .20. */
 .sheet-row-num {
   flex-shrink: 0;
   width: 26px;
   font-size: 12px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1556,12 +1840,14 @@
   overflow: hidden;
 }
 
+/* 11,5px / 700 : l'alpha 0,35 ne donnait que 3,12:1 sur #29272f ; 0,55 = 5,52:1,
+   et 4,68:1 sur l'aplat doré de .sheet-row.is-current. */
 .sheet-row-state {
   flex-shrink: 0;
   font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .sheet-row.is-answered .sheet-row-state {
@@ -1582,6 +1868,9 @@
 }
 
 .modal {
+  /* .modal-backdrop est rendu À L'INTÉRIEUR de .quiz (Quiz.jsx L295) : sans ce
+     rappel, l'anneau hériterait de --gold-light (1,38:1 sur #fff = illisible). */
+  --focus-ring: var(--gold-line);
   width: 100%;
   max-width: 420px;
   background: #fff;
@@ -1730,7 +2019,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .review-bar-count {
@@ -1782,7 +2071,7 @@
   font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--text-4);
+  color: var(--text-3);
 }
 
 .r-question {

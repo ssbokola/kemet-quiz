@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import UploadPDF from '../components/UploadPDF';
 import ReviewQuestions from '../components/ReviewQuestions';
@@ -27,11 +27,43 @@ function AdminPage() {
   const [publishError, setPublishError] = useState('');
   const [loadError, setLoadError] = useState('');
   const [closing, setClosing] = useState(false);
+  // Une seule région polie pour tout l'écran de partage : copie du lien,
+  // ouverture / fermeture du quiz. Les erreurs, elles, passent par la région
+  // d'alerte assertive plus bas.
+  const [announcement, setAnnouncement] = useState('');
+  const shareTitleRef = useRef(null);
+  // Erreur héritée de l'étape précédente : elle attend ici que l'écran de
+  // partage soit monté (voir l'effet ci-dessous).
+  const pendingErrorRef = useRef('');
+  const copyTimerRef = useRef(null);
 
   const quizLink = quiz ? `${window.location.origin}/quiz/${quiz.quizId}` : '';
 
+  // Convention de l'application : chaque écran reprend le focus sur son propre
+  // titre principal à son montage. L'écran de partage est rendu par AdminPage
+  // elle-même — les écrans « upload » et « review » s'en chargent seuls, d'où
+  // la garde : elle n'est pas un doublon du `?.`, elle empêche aussi le dépôt
+  // de l'erreur en attente hors de l'écran de partage.
+  //
+  // Le focus va au TITRE, jamais au message d'erreur : celui-ci vit dans une
+  // région role="alert" et serait alors annoncé deux fois (une fois par la
+  // région, une fois par le focus). L'erreur est déposée dans la région APRÈS
+  // le montage, donc par mutation d'une région live déjà présente : c'est la
+  // seule façon d'être sûr qu'elle soit annoncée — et une seule fois.
+  useEffect(() => {
+    if (step !== 'share') return;
+    shareTitleRef.current?.focus();
+    if (pendingErrorRef.current) {
+      setLoadError(pendingErrorRef.current);
+      pendingErrorRef.current = '';
+    }
+  }, [step]);
+
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+
   const handleQuizGenerated = async (data) => {
     setLoadError('');
+    pendingErrorRef.current = '';
     setDropped(data.dropped || 0);
     try {
       const res = await adminFetch(`/api/quiz/${data.quizId}/full`);
@@ -48,7 +80,10 @@ function AdminPage() {
       setStep('review');
     } catch (err) {
       setQuiz({ quizId: data.quizId, title: data.title, questions: [] });
-      setLoadError(err.message);
+      // Pas de setLoadError ici : la région d'alerte n'existe pas encore, elle
+      // naîtrait déjà pleine et ne serait pas annoncée. L'effet [step] la
+      // remplit une fois l'écran monté.
+      pendingErrorRef.current = err.message;
       setStep('share');
     }
   };
@@ -74,7 +109,12 @@ function AdminPage() {
   };
 
   const toggleClosed = async () => {
+    if (closing) return;
     setClosing(true);
+    // On vide l'annonce et l'erreur AVANT l'appel : deux échecs identiques à la
+    // suite ne produiraient sinon aucune mutation du DOM, donc aucune annonce.
+    setLoadError('');
+    setAnnouncement('');
     try {
       const res = await adminFetch(`/api/quiz/${quiz.quizId}`, {
         method: 'PATCH',
@@ -84,6 +124,11 @@ function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Action impossible');
       setQuiz((prev) => ({ ...prev, closed: data.closed }));
+      setAnnouncement(
+        data.closed
+          ? 'Quiz fermé : le lien ne répond plus.'
+          : 'Quiz réouvert : le lien fonctionne à nouveau.'
+      );
     } catch (err) {
       setLoadError(err.message);
     } finally {
@@ -92,12 +137,22 @@ function AdminPage() {
   };
 
   const handleCopy = async () => {
+    clearTimeout(copyTimerRef.current);
     try {
       await navigator.clipboard.writeText(quizLink);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // Le passage « Copier » → « Copié » est un changement de nom accessible
+      // sur l'élément qui a le focus : la plupart des lecteurs d'écran ne le
+      // disent pas. L'annonce passe donc par la région polie, sans déplacer le
+      // focus — l'utilisateur reste sur le bouton.
+      setAnnouncement('Lien du quiz copié dans le presse-papiers.');
+      copyTimerRef.current = setTimeout(() => {
+        setCopied(false);
+        setAnnouncement('');
+      }, 2000);
     } catch {
       setCopied(false);
+      setAnnouncement('La copie a échoué. Sélectionnez le lien puis copiez-le à la main.');
     }
   };
 
@@ -115,6 +170,8 @@ function AdminPage() {
     setDropped(0);
     setPublishError('');
     setLoadError('');
+    pendingErrorRef.current = '';
+    setAnnouncement('');
   };
 
   if (!unlocked) {
@@ -148,7 +205,9 @@ function AdminPage() {
           <Icon name={quiz.closed ? 'close' : 'check'} size={13} width={2.4} />
           {quiz.closed ? 'Quiz fermé' : 'Quiz en ligne'}
         </span>
-        <h1 className="share-title">{quiz.title}</h1>
+        <h1 className="share-title" ref={shareTitleRef} tabIndex={-1}>
+          {quiz.title}
+        </h1>
       </div>
 
       <div className="meta-row">
@@ -161,17 +220,35 @@ function AdminPage() {
             <span>Jusqu’au {expiry}</span>
           </>
         )}
-        <button className="btn-danger-link" onClick={toggleClosed} disabled={closing}>
-          {closing ? '…' : quiz.closed ? 'Réouvrir' : 'Fermer le quiz'}
+        <button
+          type="button"
+          className="btn-danger-link"
+          onClick={toggleClosed}
+          aria-busy={closing}
+        >
+          {closing ? 'Patientez…' : quiz.closed ? 'Réouvrir' : 'Fermer le quiz'}
         </button>
       </div>
 
-      {loadError && (
-        <p className="error-msg">
-          <Icon name="info" size={16} width={1.8} />
-          <span>{loadError}</span>
-        </p>
-      )}
+      {/* Région d'alerte assertive, montée VIDE avec l'écran puis remplie :
+          c'est l'unique mécanisme d'annonce des erreurs de cet écran, aussi
+          bien celle héritée de l'étape précédente (déposée par l'effet [step])
+          que celles survenues pendant la session (fermeture / réouverture).
+          Le <p> ne reçoit donc jamais le focus : il serait relu une seconde
+          fois. */}
+      <div className="error-slot" role="alert" aria-atomic="true">
+        {loadError ? (
+          <p className="error-msg">
+            <Icon name="info" size={16} width={1.8} />
+            <span>{loadError}</span>
+          </p>
+        ) : null}
+      </div>
+
+      {/* Unique région polie de l'écran : copie du lien, ouverture/fermeture. */}
+      <p className="sr-only" role="status" aria-atomic="true">
+        {announcement}
+      </p>
 
       <div className="qr-frame">
         <QRCodeSVG value={quizLink} size={176} bgColor="#ffffff" fgColor="#1f1d24" level="M" />
@@ -179,13 +256,21 @@ function AdminPage() {
       </div>
 
       <div className="field">
-        <span className="field-label">Lien du quiz</span>
+        <label className="field-label" htmlFor="quiz-link">
+          Lien du quiz
+        </label>
         <div className="link-row">
-          <input type="text" value={quizLink} readOnly className="link-input" />
-          <button className={`btn-copy ${copied ? 'is-copied' : ''}`} onClick={handleCopy}>
+          <input id="quiz-link" type="text" value={quizLink} readOnly className="link-input" />
+          <button
+            type="button"
+            className={`btn-copy ${copied ? 'is-copied' : ''}`}
+            onClick={handleCopy}
+          >
             <Icon name={copied ? 'check' : 'copy'} size={15} width={1.7} />
             {copied ? 'Copié' : 'Copier'}
           </button>
+          {/* NE PAS poser aria-live sur ce bouton : son propre libellé serait
+              relu à chaque bascule, en doublon de la région status. */}
         </div>
       </div>
 
@@ -195,8 +280,17 @@ function AdminPage() {
           Envoyer sur WhatsApp
         </button>
         <div className="split-actions">
+          {/* On vide l'erreur en quittant l'écran : sinon elle repeuplerait la
+              région d'alerte au retour, qui la ré-annoncerait alors qu'elle
+              concerne une action déjà passée. */}
           {quiz.questions.length > 0 && (
-            <button className="btn btn--ghost" onClick={() => setStep('review')}>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                setLoadError('');
+                setStep('review');
+              }}
+            >
               <Icon name="edit" size={16} width={1.7} />
               Modifier
             </button>

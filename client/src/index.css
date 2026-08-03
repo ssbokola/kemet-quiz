@@ -11,22 +11,62 @@
   --gold-soft: #f6eedc;
   --gold-border: #e4d5ac;
   --gold-light: #f1d89a;
+  /* Or « portant » : seul or admissible comme contour ou anneau sur fond papier.
+     3,72:1 sur --paper-3 (#edeae4) · 4,47:1 sur #fff · 4,32:1 sur #fdfbf6
+     N'est PAS un contour valable dans l'univers encre : 4,03:1 sur le fond NU
+     --ink-deep, mais 2,91:1 seulement sur l'aplat doré composé
+     rgba(200,164,90,.18)/--ink-deep (#373026) → voir --gold-line-ink. */
+  --gold-line: #8f742c;
+  /* Or « portant » de l'univers encre : contour ou anneau doré sur fond sombre.
+     Découplé de --gold, qui est un token de REMPLISSAGE (.btn-gold, .tick) :
+     faire évoluer l'aplat ne doit pas casser en silence le contrat de contour.
+     Pire cas 5,53:1 sur l'aplat doré composé #373026 (.recap-cell.is-answered)
+     6,25:1 sur l'aplat de .sheet-row (#29272f) · 6,99:1 sur #201e26 (.sheet)
+     7,64:1 sur --ink-deep. État accentué du même contour : --gold-light. */
+  --gold-line-ink: #c8a45a;
+  /* Anneau de focus. Valeur par défaut = --gold-line, conforme sur papier et sur
+     le fond nu --ink-deep (4,03:1) ; surchargé en --gold-light dans .quiz pour la
+     lisibilité sur encre (12,89:1 sur --ink-deep, 11,79:1 sur #201e26). */
+  --focus-ring: var(--gold-line);
 
   /* Encre — titres, boutons de confirmation, écran de quiz */
   --ink: #1f1d24;
   --ink-deep: #17161a;
   --ink-line: #2b2930;
+  /* --line-control-ink : contour de tout contrôle interactif de l'univers encre,
+     miroir sombre de --line-control. ≥ 3:1 (WCAG 1.4.11). Sert aussi de couleur
+     de remplissage aux contrôles sans bordure (.tick non répondu).
+     Forme alpha VOLONTAIRE : les surfaces sombres ne sont pas identiques, et un
+     hex figé (#6f6f71) tomberait à 2,80:1 sur l'aplat de .opt:hover et 2,94:1 sur
+     celui de .sheet-row. L'alpha se recompose sur chaque fond et tient un ratio
+     quasi constant (3,45 à 3,82 sur les neuf surfaces sombres du thème).
+     Pire cas 3,45:1 sur l'aplat doré #373026 (.recap-cell.is-answered)
+     3,57:1 sur .opt:hover (#2c2b2f) · 3,61:1 sur --ink-line · 3,62:1 sur l'aplat
+     de .sheet-row (#29272f) · 3,71:1 sur celui de .opt (#232225)
+     3,76:1 sur --ink et sur #201e26 (.sheet) · 3,82:1 sur --ink-deep. */
+  --line-control-ink: rgba(255, 255, 255, 0.4);
+  /* État survolé du contour encre. 1,94:1 face à --line-control-ink : le
+     changement d'état reste perceptible sans virer au blanc.
+     Pire cas 6,03:1 sur #373026 · 6,36:1 sur .opt:hover · 7,43:1 sur --ink-deep. */
+  --line-control-ink-hover: rgba(255, 255, 255, 0.62);
 
   /* Neutres chauds */
   --paper: #fbfaf8;
   --paper-2: #f2efe8;
   --paper-3: #edeae4;
+  /* --line : séparateurs PUREMENT DÉCORATIFS (cartes, .step, .qr-frame,
+     .meta-row, .bar, bordure basse de l'app-bar). Aucune exigence WCAG. */
   --line: #e7e2d8;
-  --line-strong: #e0dacf;
+  /* --line-control : contour de tout contrôle interactif de l'univers papier
+     (pendant clair de --line-control-ink). ≥ 3:1 (WCAG 1.4.11)
+     3,13:1 sur --paper-3 (#edeae4) · 3,76:1 sur #fff · 3,27:1 sur --paper-2
+     3,64:1 sur #fdfbf6 · 3,26:1 sur --gold-soft · 3,61:1 sur --paper */
+  --line-control: #8a8375;
   --text: #1f1d24;
   --text-2: #4f4a41;
+  /* --text-3 : unique niveau de texte secondaire (l'ancien --text-4 y est fusionné)
+     4,87:1 sur --paper-3 (#edeae4) · 5,85:1 sur #fff · 5,09:1 sur --paper-2 */
   --text-3: #6b6459;
-  --text-4: #78716a;
 
   /* États */
   --ok: #2e7d5b;
@@ -107,7 +147,7 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

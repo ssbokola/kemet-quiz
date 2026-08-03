@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 
 import { adminFetch } from '../api';
@@ -27,6 +27,18 @@ function ReviewQuestions({
   const [editing, setEditing] = useState(null);
   const [busy, setBusy] = useState(null);
   const [rowError, setRowError] = useState('');
+  const headingRef = useRef(null);
+
+  // Convention de l'application : chaque écran reprend le focus sur son propre
+  // titre principal à son montage. L'écran précédent (progression de la
+  // génération, ou partage) est démonté avec l'élément qui avait le focus :
+  // sans cette reprise, le focus retombe sur <body> et la tabulation repart du
+  // haut du document. Aucun risque de vol de focus au premier rendu de
+  // l'application : AdminPage démarre toujours à l'étape « upload », cet écran
+  // n'est donc jamais le tout premier monté.
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
 
   const update = (idx, patch) =>
     setItems((prev) => prev.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
@@ -58,7 +70,11 @@ function ReviewQuestions({
   return (
     <div>
       <div className="review-head">
-        <h2>Relire avant de partager</h2>
+        {/* Titre de premier niveau : c'est le titre le plus haut du document
+            dans cet état de l'application. */}
+        <h1 ref={headingRef} tabIndex={-1}>
+          Relire avant de partager
+        </h1>
         <span className="subtle">
           {items.length} questions générées pour « {title} » — modifiez ce qui doit l’être.
         </span>
