@@ -8,9 +8,33 @@
   --gold: #c8a45a;
   --gold-hover: #b8933f;
   --gold-deep: #7a6528;
+  /* Survol du seul lien global de l'application (a:hover, plus bas dans ce
+     fichier). 1,25:1 face à --gold-deep : le replier sur --gold-deep rendrait
+     a:hover strictement identique à a — le contraste ne baisserait pas, l'état
+     de survol, si. */
+  --gold-deep-hover: #6e5518;
   --gold-soft: #f6eedc;
   --gold-border: #e4d5ac;
   --gold-light: #f1d89a;
+  /* Texte principal sur aplat doré clair — 9,54:1 sur --gold-soft. Palier HAUT
+     d'une échelle à deux crans dont --gold-deep est le palier bas (dE2000 =
+     15,57) : NE PAS les fusionner. Le faire ramènerait la marge sur --gold-soft
+     de 9,54 à 4,89:1 et donnerait à .step.is-doing la même couleur pour le nom
+     de l'étape et pour sa métadonnée. */
+  --gold-ink: #4a3a12;
+  /* Piste passive de l'anneau de chargement (.spinner), l'arc porteur restant à
+     3,63:1. NE PAS replier sur --gold-soft (dE2000 = 1,49 : dérive perceptible
+     sur le seul élément animé d'une attente, pour un gain nul). À PROSCRIRE
+     ABSOLUMENT : --gold-border, qui ferait tomber l'arc à 3,06:1, six centièmes
+     au-dessus du seuil de WCAG 1.4.11. */
+  --gold-track: #efe7d5;
+  /* Aplat doré d'état de l'univers encre. C'est le pire cas documenté de
+     --line-control-ink : 3,45:1 sur le fond composé #373026. */
+  --gold-fill-soft: rgba(200, 164, 90, 0.18);
+  /* Renfort DÉCORATIF du champ en cours de saisie (1,13:1 composé sur #fff) :
+     l'indicateur mesurable reste l'anneau :focus-visible piloté par
+     --focus-ring, jamais ce halo. */
+  --gold-halo: rgba(200, 164, 90, 0.16);
   /* Or « portant » : seul or admissible comme contour ou anneau sur fond papier.
      3,72:1 sur --paper-3 (#edeae4) · 4,47:1 sur #fff · 4,32:1 sur #fdfbf6
      N'est PAS un contour valable dans l'univers encre : 4,03:1 sur le fond NU
@@ -32,7 +56,35 @@
   /* Encre — titres, boutons de confirmation, écran de quiz */
   --ink: #1f1d24;
   --ink-deep: #17161a;
+  /* Aucun usage aujourd'hui. NE PAS y absorber #201e26 (--ink-sheet, dE 3,53 :
+     la surface de la feuille changerait visiblement et --line-control-ink y
+     tomberait de 3,76 à 3,61:1) ni #34313c (--ink-hover, dE 3,55 : l'écart de
+     survol du bouton encre tomberait de 1,31 à 1,16:1). Ce token est une
+     réserve, pas un aimant. */
   --ink-line: #2b2930;
+  /* Fond de la feuille modale « Toutes les questions » (.sheet). Fond de
+     référence de cinq ratios déjà audités (dont celui de --gold-line-ink
+     ci-dessus, 6,99:1) : le nommer ne le déplace pas. */
+  --ink-sheet: #201e26;
+  /* Survol du bouton encre (.btn--ink). Écart d'état 1,31:1 face à --ink. Le
+     replier sur --ink-line ferait MONTER le contraste du texte (12,72 → 14,36:1)
+     mais tomber l'écart repos → survol à 1,16:1 : le contraste s'améliore, la
+     fonction disparaît. */
+  --ink-hover: #34313c;
+  /* Aplat de surface des contrôles sombres : c'est lui qui COMPOSE les fonds
+     effectifs de presque tout le thème encre (.opt, .recap-cell, .recap-missing).
+     Aucun ratio du thème ne se calcule contre --ink-deep nu. */
+  --ink-surface: rgba(255, 255, 255, 0.05);
+  /* Texte et marque de PREMIER PLAN sur fond sombre. Même valeur que --surface,
+     contrat opposé : découplage volontaire, comme --gold-line-ink face à --gold.
+     Faire évoluer une surface blanche ne doit pas repeindre en silence le texte
+     de l'écran de quiz. */
+  --on-ink: #ffffff;
+  /* Texte secondaire du thème encre. Alpha calibré un par un dans les lots
+     précédents : 6,12:1 (.kbd-hint), 5,52:1 sur #29272f, 4,68:1 sur l'aplat doré.
+     NE PAS y absorber rgba(255,255,255,.6) : cela ferait BAISSER le contraste de
+     .opt-letter, audité à 6,57:1 et 6,08:1. */
+  --on-ink-2: rgba(255, 255, 255, 0.55);
   /* --line-control-ink : contour de tout contrôle interactif de l'univers encre,
      miroir sombre de --line-control. ≥ 3:1 (WCAG 1.4.11). Sert aussi de couleur
      de remplissage aux contrôles sans bordure (.tick non répondu).
@@ -51,9 +103,20 @@
   --line-control-ink-hover: rgba(255, 255, 255, 0.62);
 
   /* Neutres chauds */
+  /* Surface blanche pure des cartes et des contrôles de l'univers papier.
+     NE PAS replier sur --paper : tous les ratios audités du projet sont calculés
+     « sur #fff » (--line-control 3,76:1, --ok 5,00:1, --err 5,05:1, --gold-line
+     4,47:1) et --paper sert EXPRÈS à s'en distinguer (.step.is-todo, écart
+     documenté à 1,04:1, porteur de l'état « à venir »). */
+  --surface: #ffffff;
   --paper: #fbfaf8;
   --paper-2: #f2efe8;
   --paper-3: #edeae4;
+  /* Blanc à peine réchauffé : survol fantôme, zone de dépôt, choix actif.
+     Rapprochement vers --paper refusé : trois commentaires audités citent
+     nommément « 5,46:1 sur #fdfbf6 », et .choice.is-active se lit face au
+     --surface de .choice au repos, écart déjà ténu. */
+  --paper-warm: #fdfbf6;
   /* --line : séparateurs PUREMENT DÉCORATIFS (cartes, .step, .qr-frame,
      .meta-row, .bar, bordure basse de l'app-bar). Aucune exigence WCAG. */
   --line: #e7e2d8;
@@ -67,6 +130,12 @@
   /* --text-3 : unique niveau de texte secondaire (l'ancien --text-4 y est fusionné)
      4,87:1 sur --paper-3 (#edeae4) · 5,85:1 sur #fff · 5,09:1 sur --paper-2 */
   --text-3: #6b6459;
+  /* Un cran SOUS --text-3, à dessein : c'est cette métadonnée (.step.is-todo
+     .step-meta) qui fixe le plancher de 4,58:1 sur --paper et qui a imposé le
+     fond de .step.is-todo. Le replier sur --text-3 ferait MONTER le contraste
+     (4,58 → 5,60:1) et c'est précisément le problème : la règle deviendrait un
+     no-op et l'état « à venir » perdrait son affaiblissement. */
+  --text-3-weak: #797263;
 
   /* États */
   --ok: #2e7d5b;
@@ -74,22 +143,120 @@
   --ok-text: #1b5b41;
   --err: #c0453b;
   --err-bg: #fae7e5;
+  /* Aplat de la réponse donnée fausse (.r-answer--mine). NE PAS replier sur
+     --err-bg (dE2000 = 4,11, perceptible) : l'aplat perdrait son écart avec
+     .r-badge.is-wrong, qui porte déjà --err-bg SUR LA MÊME CARTE. */
+  --err-bg-soft: #fdf3f2;
   --err-text: #8e332b;
   --wa: #1f7a4c;
+  /* Survol du bouton WhatsApp. NE PAS replier sur --ok-text : cela emploierait
+     un token de TEXTE comme fond de bouton et brouillerait son contrat. */
+  --wa-hover: #186139;
 
   /* Formes */
+  --r-xs: 8px;      /* micro-contrôle textuel de 32px de haut ou moins */
   --r-sm: 10px;
+  /* LE rayon réellement dominant du fichier de composants (9 usages) et il
+     n'existait dans aucun token : contrôles de formulaire et lignes cliquables. */
+  --r-control: 12px;
   --r-md: 14px;
   --r-lg: 20px;
   --r-xl: 26px;
+  --r-pill: 999px;  /* capsule — idiome, ne jamais arrondir vers l'échelle */
+
+  /* Hauteurs de contrôles — quatre paliers, deux d'entre eux sous contrat */
+  --h-chip: 36px;   /* contrôle secondaire du thème encre */
+  /* PLANCHER WCAG 2.5.5, pas un palier d'échelle : ne peut jamais descendre. */
+  --h-min: 44px;
+  /* Rôle DISTINCT de --h-action, pas une dérive : éléments disposés en grille
+     (segments à 5 colonnes, récap en auto-fill, barre de 3 actions) où 52px
+     déborderait. */
+  --h-grid: 48px;
+  /* Palier d'action des deux univers. Adossé au calcul de cible tactile écrit en
+     commentaire d'App.css (.field-lead .segment) : (339 − 32 − 2 − 4×8) / 5 =
+     54,6 × 52px, au-dessus des 44×44 de WCAG 2.5.5. */
+  --h-action: 52px;
+
+  /* Espacements — échelle unique partagée par gap ET padding.
+     Numérotée et non nommée par rôle : chaque pas sert à la fois de gouttière et
+     de padding, dans les deux univers — un nom de rôle unique serait un mensonge.
+     Le rôle dominant est en commentaire. */
+  --s-1: 3px;    /* deux lignes de texte collées */
+  --s-2: 6px;    /* icône + libellé, liste très serrée */
+  --s-3: 8px;    /* gouttière courte de référence (grilles, listes) */
+  --s-4: 10px;   /* entre actions voisines, intérieur des boutons */
+  --s-5: 12px;   /* gouttière interne de carte ou de ligne */
+  --s-6: 14px;   /* padding interne de référence */
+  --s-7: 16px;   /* entre champs, padding de carte */
+  --s-8: 18px;   /* gouttière de page — univers papier */
+  --s-9: 20px;   /* gouttière de page — univers encre */
+  --s-10: 22px;  /* pile de premier niveau, respiration d'écran */
+  --s-11: 24px;  /* grandes surfaces, gouttière de page large (≥720px) */
+  --s-12: 26px;  /* séparation des grands blocs d'un écran */
+  --s-13: 32px;  /* barre d'application large, haut du bandeau de score */
+  --s-14: 40px;  /* grand dégagement vertical, hauteur de la zone de dépôt */
+  --s-15: 48px;  /* état vide */
+  --s-16: 64px;  /* bas de page, large écran */
 
   --sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
   --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* Tailles de texte — cinq paliers, nommés par le rôle qu'ils servent et non
+     par leur taille. AUCUNE valeur fractionnaire : un demi-pixel ne se voit pas,
+     il ne crée donc pas de hiérarchie, seulement du désordre. Aucun de ces
+     paliers ne franchit un seuil « grand texte » de WCAG (18,66px pour le gras,
+     24px pour le régulier) : tous les ratios audités des lots précédents restent
+     valables tels quels. */
+  --t-micro: 12px;    /* micro-capitales, métadonnées, légendes, numéros d'ordre */
+  --t-label: 13px;    /* libellé de champ, texte d'aide, texte secondaire */
+  --t-body: 14px;     /* corps de lecture : paragraphe, énoncé, ligne de liste */
+  --t-control: 15px;  /* libellé de contrôle pleine hauteur, texte d'option */
+  /* PLANCHER TECHNIQUE, pas un choix typographique : sous 16px, Safari iOS zoome
+     le viewport à la prise de focus d'un champ texte. NE JAMAIS DESCENDRE. */
+  --t-lead: 16px;     /* champ de saisie, palier de décision, titre de dialogue sans */
+
+  /* Tailles de titre (display) — trois niveaux, et trois valeurs qui n'en sont
+     pas (mention de résultat, énoncé de question, chiffre du score). */
+  --d-dialog: 24px;   /* titre serif d'une surface role="dialog" */
+  /* Découplé de --d-dialog À DESSEIN, bien que de même valeur — même précaution
+     que --gold-line-ink face à --gold. La couleur de .score-grade vient du JS
+     (Results.jsx l.61-68) et deux des quatre issues (3,34:1 et 3,30:1) ne sont
+     conformes QUE par l'exemption « grand texte », qui commence exactement à
+     24px. Descendre ce token met deux issues de résultat hors conformité sans
+     qu'aucun test visuel ne le signale. NE JAMAIS DESCENDRE. */
+  --d-grade: 24px;    /* mention de résultat (.score-grade) */
+  /* L'énoncé de question n'est pas un titre d'écran mais du CONTENU : interligne
+     propre, seul palier responsive du projet, écran le plus fréquenté. Il est
+     donc hors de l'échelle des titres et garde ses deux marches. */
+  --d-question: 27px;
+  --d-question-lg: 32px;  /* @media (min-width: 720px) */
+  /* UN SEUL niveau de titre d'écran. Cinq écrans pleins portaient cinq tailles
+     (30/30/28/27/26) pour un rang strictement identique. Ne jamais en dériver une
+     variante : un écran ajouté demain porte ce token, point. */
+  --d-screen: 28px;
+  --d-hero: 36px;     /* titre du quiz sur l'accueil participant — seul de son rang */
+  /* Affichage de DONNÉE, pas un titre : n'appartient à aucun niveau et ne doit
+     jamais entrer dans l'échelle ci-dessus. */
+  --d-score: 44px;
+
+  /* Interlignes */
+  --lh-display: 1.15;   /* titres serif */
+  --lh-question: 1.28;  /* énoncé de question — SANS UNITÉ : suit seul le palier 32px */
+  --lh-snug: 1.45;      /* option, ligne compacte, micro-texte multiligne */
+  --lh-text: 1.55;      /* texte courant */
+  --lh-para: 1.6;       /* paragraphe d'introduction d'écran */
+
+  /* Interlettrages */
+  --ls-display: -0.01em;  /* resserrement optique des grands titres serif */
+  --ls-caps: 0.1em;       /* micro-capitales espacées (sept variantes fusionnées) */
+
   --shadow-card: 0 1px 2px rgba(31, 29, 36, 0.04);
-  --shadow-pop: 0 18px 44px -28px rgba(31, 29, 36, 0.35);
   --shadow-gold: 0 12px 26px -14px rgba(200, 164, 90, 0.95);
+  /* Zone de dépôt allumée (survol de fichier, focus interne). Trois copies
+     littérales de la même ombre dans App.css, dont deux dans un couple
+     @supports / :has() qui doit rester rigoureusement synchronisé. */
+  --shadow-drop: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
 }
 
 *,
@@ -131,8 +298,8 @@ a {
 }
 
 a:hover {
-  color: #6e5518;
-  border-bottom-color: #6e5518;
+  color: var(--gold-deep-hover);
+  border-bottom-color: var(--gold-deep-hover);
 }
 
 input,

@@ -144,7 +144,7 @@ function ReviewQuestions({
       </div>
 
       {dropped > 0 && (
-        <p className="notice" style={{ marginBottom: 12 }}>
+        <p className="notice" style={{ marginBottom: 'var(--s-5)' }}>
           <Icon name="info" size={15} width={1.8} />
           <span>
             {dropped} question{dropped > 1 ? 's' : ''} écartée{dropped > 1 ? 's' : ''} à la
@@ -165,7 +165,7 @@ function ReviewQuestions({
           Le message n'est PAS focalisable : il est annoncé par la région et par
           elle seule, et le bouton cliqué a gardé le focus (il n'est plus
           désactivé pendant la requête). */}
-      <div className="error-slot" role="alert" aria-atomic="true" style={{ marginBottom: 12 }}>
+      <div className="error-slot" role="alert" aria-atomic="true" style={{ marginBottom: 'var(--s-5)' }}>
         {announcedRowError.texte ? (
           <p className="error-msg" key={announcedRowError.n}>
             <Icon name="info" size={16} width={1.8} />
@@ -312,7 +312,7 @@ function ReviewQuestions({
           le focus pendant toute la requête. Mêmes règles que la région
           ci-dessus : texte retardé d'un commit, forme ternaire, marge sur le
           conteneur. */}
-      <div className="error-slot" role="alert" aria-atomic="true" style={{ marginTop: 14 }}>
+      <div className="error-slot" role="alert" aria-atomic="true" style={{ marginTop: 'var(--s-6)' }}>
         {announcedPublishError ? (
           <p className="error-msg">
             <Icon name="info" size={16} width={1.8} />

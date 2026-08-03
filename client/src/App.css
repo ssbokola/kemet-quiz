@@ -14,8 +14,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px;
+  gap: var(--s-5);
+  padding: var(--s-7) var(--s-9);
   background: var(--paper);
   border-bottom: 1px solid var(--line);
 }
@@ -23,7 +23,7 @@
 .app-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s-4);
   border: 0;
 }
 
@@ -41,33 +41,33 @@
   justify-content: center;
   width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--ink);
   color: var(--gold-light);
   font-family: var(--serif);
-  font-size: 17px;
+  font-size: var(--t-lead);
   line-height: 1;
   flex-shrink: 0;
 }
 
 .app-brand-name {
-  font-size: 15px;
+  font-size: var(--t-control);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-display);
   color: var(--text);
 }
 
 .app-bar-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--s-2);
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--text-3);
   background: none;
   border: 0;
   cursor: pointer;
-  padding: 8px;
+  padding: var(--s-3);
   border-radius: var(--r-sm);
 }
 
@@ -81,7 +81,7 @@
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
-  padding: 22px 18px 40px;
+  padding: var(--s-10) var(--s-8) var(--s-14);
   display: flex;
   flex-direction: column;
 }
@@ -97,18 +97,18 @@
 
 @media (min-width: 720px) {
   .app-bar {
-    padding: 18px 32px;
+    padding: var(--s-8) var(--s-13);
   }
   .app-main {
-    padding: 40px 24px 64px;
+    padding: var(--s-14) var(--s-11) var(--s-16);
   }
 }
 
 /* ---------- Typo utilitaires ---------- */
 .eyebrow {
-  font-size: 11px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--ls-caps);
   text-transform: uppercase;
   color: var(--text-3);
 }
@@ -116,14 +116,14 @@
 .h-display {
   font-family: var(--serif);
   font-weight: 400;
-  letter-spacing: -0.01em;
-  line-height: 1.12;
+  letter-spacing: var(--ls-display);
+  line-height: var(--lh-display);
   color: var(--text);
 }
 
 .subtle {
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--t-label);
+  line-height: var(--lh-text);
   color: var(--text-3);
 }
 
@@ -132,12 +132,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 0 22px;
+  gap: var(--s-4);
+  min-height: var(--h-action);
+  padding: 0 var(--s-10);
   border: 0;
   border-radius: var(--r-md);
-  font-size: 15.5px;
+  font-size: var(--t-control);
   font-weight: 600;
   cursor: pointer;
   transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.12s,
@@ -164,15 +164,15 @@
 
 .btn--ink {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 .btn--ink:hover:not(:disabled) {
-  background: #34313c;
+  background: var(--ink-hover);
 }
 
 .btn--ghost {
-  background: #fff;
+  background: var(--surface);
   border: 1.5px solid var(--line-control);
   color: var(--text-2);
 }
@@ -180,29 +180,29 @@
 .btn--ghost:hover:not(:disabled) {
   border-color: var(--gold-line);
   color: var(--gold-deep);
-  background: #fdfbf6;
+  background: var(--paper-warm);
 }
 
 .btn--wa {
   background: var(--wa);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 .btn--wa:hover:not(:disabled) {
-  background: #186139;
+  background: var(--wa-hover);
 }
 
 .btn--icon {
-  width: 52px;
-  min-height: 52px;
+  width: var(--h-action);
+  min-height: var(--h-action);
   padding: 0;
   flex-shrink: 0;
 }
 
 .btn--sm {
-  min-height: 44px;
-  font-size: 14px;
-  padding: 0 16px;
+  min-height: var(--h-min);
+  font-size: var(--t-body);
+  padding: 0 var(--s-7);
 }
 
 .btn:disabled {
@@ -215,8 +215,8 @@
 
 .btn-hint {
   text-align: center;
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: var(--t-micro);
+  line-height: var(--lh-snug);
   color: var(--text-3);
 }
 
@@ -238,7 +238,7 @@
 
 /* ---------- Blocs ---------- */
 .card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-card);
@@ -247,21 +247,21 @@
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: var(--s-10);
 }
 
 .stack--tight {
-  gap: 10px;
+  gap: var(--s-4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .field-label {
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--text-2);
 }
@@ -277,27 +277,27 @@
 .field-lead {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: var(--s-7);
+  padding: var(--s-7);
 }
 
 @media (min-width: 720px) {
   .field-lead {
-    padding: 18px;
+    padding: var(--s-8);
   }
 }
 
 /* 0-2-0 : l'emporte sur .field-label (0-1-0) quel que soit l'ordre des règles.
    --text (#1f1d24) sur #fff = 16,67:1. */
 .field-label.field-label--lead {
-  font-size: 15px;
+  font-size: var(--t-control);
   color: var(--text);
 }
 
 /* Valeur qui se RECALCULE, par opposition à l'aide statique en --text-3 :
    --text-2 (#4f4a41) sur #fff = 8,79:1. */
 .field-readout {
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--text-2);
 }
@@ -314,8 +314,8 @@
    un séparateur PUREMENT DÉCORATIF, conforme au contrat écrit du token
    (index.css l.57-59) : aucun contenu n'en dépend pour être compris. */
 .field-lead .segment {
-  min-height: 52px;
-  font-size: 16px;
+  min-height: var(--h-action);
+  font-size: var(--t-lead);
 }
 
 /* AUCUN champ de saisie ne déclare « outline: none ». App.css est chargé APRÈS
@@ -331,12 +331,12 @@
    le contraste (1,13:1) le rend imperceptible — pas de double anneau visible. */
 .input {
   width: 100%;
-  min-height: 54px;
-  padding: 0 16px;
-  background: #fff;
+  min-height: var(--h-action);
+  padding: 0 var(--s-7);
+  background: var(--surface);
   border: 1.5px solid var(--line-control);
   border-radius: var(--r-md);
-  font-size: 16px;
+  font-size: var(--t-lead);
   color: var(--text);
   transition: border-color 0.18s, box-shadow 0.18s;
 }
@@ -347,7 +347,7 @@
 
 .input:focus {
   border-color: var(--gold-line);
-  box-shadow: 0 0 0 3px rgba(200, 164, 90, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-halo);
 }
 
 /* Le conteneur role="alert" est monté EN PERMANENCE : une région live ajoutée
@@ -377,13 +377,13 @@
 .error-msg {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 13px 15px;
+  gap: var(--s-3);
+  padding: var(--s-5) var(--s-6);
   background: var(--err-bg);
   border-radius: var(--r-sm);
   color: var(--err-text);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: var(--t-body);
+  line-height: var(--lh-text);
   animation: fade-in 0.25s ease;
 }
 
@@ -400,15 +400,15 @@
 
 .tag-row {
   display: flex;
-  gap: 8px;
+  gap: var(--s-3);
   flex-wrap: wrap;
 }
 
 .tag {
-  padding: 6px 11px;
-  border-radius: 999px;
+  padding: var(--s-2) var(--s-5);
+  border-radius: var(--r-pill);
   background: var(--paper-2);
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--text-2);
 }
@@ -417,20 +417,20 @@
 .page-head {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 22px;
+  gap: var(--s-2);
+  margin-bottom: var(--s-10);
 }
 
 .page-head h1 {
   font-family: var(--serif);
-  font-size: 30px;
+  font-size: var(--d-screen);
   font-weight: 400;
-  line-height: 1.15;
+  line-height: var(--lh-display);
 }
 
 .page-head p {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--t-body);
+  line-height: var(--lh-para);
   color: var(--text-2);
   text-wrap: pretty;
 }
@@ -442,11 +442,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 40px 24px;
+  gap: var(--s-5);
+  padding: var(--s-14) var(--s-11);
   border: 1.5px dashed var(--gold-line);
-  border-radius: 18px;
-  background: #fdfbf6;
+  border-radius: var(--r-lg);
+  background: var(--paper-warm);
   text-align: center;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
@@ -461,7 +461,7 @@
   border-style: solid;
   border-color: var(--gold-line);
   background: var(--gold-soft);
-  box-shadow: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
+  box-shadow: var(--shadow-drop);
 }
 
 /* Focus clavier : l'input est masqué, c'est le label qui montre l'état.
@@ -482,7 +482,7 @@
     background: var(--gold-soft);
     outline: 2px solid var(--gold-deep);
     outline-offset: 2px;
-    box-shadow: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
+    box-shadow: var(--shadow-drop);
   }
 }
 
@@ -492,17 +492,17 @@
   background: var(--gold-soft);
   outline: 2px solid var(--gold-deep);
   outline-offset: 2px;
-  box-shadow: 0 10px 30px -18px rgba(200, 164, 90, 0.9);
+  box-shadow: var(--shadow-drop);
 }
 
 .dropzone-title {
-  font-size: 15px;
+  font-size: var(--t-control);
   font-weight: 600;
   color: var(--text);
 }
 
 .dropzone-alt {
-  font-size: 13px;
+  font-size: var(--t-label);
   color: var(--text-3);
 }
 
@@ -512,7 +512,7 @@
 }
 
 .dropzone-meta {
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   color: var(--text-3);
 }
 
@@ -546,8 +546,8 @@
 .file-chip {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: var(--s-5);
+  padding: var(--s-6) var(--s-7);
   background: var(--gold-soft);
   border: 1px solid var(--gold-border);
   border-radius: var(--r-md);
@@ -558,21 +558,21 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--s-1);
 }
 
 .file-chip-name {
-  font-size: 13.5px;
+  font-size: var(--t-body);
   font-weight: 600;
-  color: #4a3a12;
+  color: var(--gold-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .file-chip-meta {
-  font-size: 12px;
-  color: #7a6528;
+  font-size: var(--t-micro);
+  color: var(--gold-deep);
 }
 
 .file-chip-remove {
@@ -582,7 +582,7 @@
   width: 30px;
   height: 30px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: rgba(154, 122, 46, 0.12);
   color: var(--gold-deep);
   cursor: pointer;
@@ -601,12 +601,12 @@
   display: inline-flex;
   align-items: center;
   height: 30px;
-  padding: 0 12px;
+  padding: 0 var(--s-5);
   border: 1px solid var(--gold-deep);
-  border-radius: 9px;
-  background: #fff;
+  border-radius: var(--r-sm);
+  background: var(--surface);
   color: var(--gold-deep);
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -615,7 +615,7 @@
 
 .file-chip-change:hover {
   background: var(--gold-deep);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 /* Même raisonnement que .dropzone : l'anneau ne s'allume qu'au clavier, le
@@ -637,7 +637,7 @@
 .segments {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .segments--3 {
@@ -645,16 +645,15 @@
 }
 
 .segment--text {
-  font-size: 13.5px;
-  padding: 0 8px;
+  padding: 0 var(--s-3);
 }
 
 .segment {
-  min-height: 48px;
+  min-height: var(--h-grid);
   border: 1px solid var(--line-control);
-  border-radius: 12px;
-  background: #fff;
-  font-size: 15px;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  font-size: var(--t-control);
   font-weight: 600;
   color: var(--text-2);
   cursor: pointer;
@@ -669,7 +668,7 @@
 .segment.is-active {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--on-ink);
   font-weight: 700;
 }
 
@@ -682,18 +681,18 @@
 .choices {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .choice {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  padding: 10px 15px;
+  gap: var(--s-5);
+  min-height: var(--h-action);
+  padding: var(--s-4) var(--s-6);
   border: 1px solid var(--line-control);
-  border-radius: 12px;
-  background: #fff;
+  border-radius: var(--r-control);
+  background: var(--surface);
   text-align: left;
   cursor: pointer;
   transition: all 0.18s;
@@ -705,7 +704,7 @@
 
 .choice.is-active {
   border: 1.5px solid var(--gold-line);
-  background: #fdfbf6;
+  background: var(--paper-warm);
 }
 
 .choice-dot {
@@ -724,11 +723,11 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--on-ink);
 }
 
 .choice-label {
-  font-size: 14px;
+  font-size: var(--t-body);
   font-weight: 600;
   color: var(--text);
   width: 78px;
@@ -736,48 +735,51 @@
 }
 
 .choice-desc {
-  font-size: 12.5px;
+  font-size: var(--t-label);
   color: var(--text-3);
 }
 
 .choice.is-active .choice-desc {
-  color: #7a6528;
+  color: var(--gold-deep);
 }
 
 /* ---------- Palier 3 : le tiroir « Diffusion du lien » ---------- */
 .advanced {
   border-top: 1px solid var(--line); /* séparateur décoratif, cf. contrat du token */
-  padding-top: 10px;
+  padding-top: var(--s-4);
 }
 
-/* La surface de survol déborde de 14px de chaque côté pour respirer, mais le
-   TEXTE reste aligné sur la colonne du formulaire : box-sizing: border-box est
-   global (index.css l.95-101), donc calc(100% + 28px) moins 28px de padding
-   redonne exactement 100% de largeur de contenu. */
+/* La surface de survol déborde de --s-6 (14px) de chaque côté pour respirer,
+   mais le TEXTE reste aligné sur la colonne du formulaire : box-sizing:
+   border-box est global (index.css l.95-101), donc la largeur ajoutée
+   (2 × --s-6, soit 28px) est exactement reprise par le padding horizontal et il
+   reste 100% de largeur de contenu. Les trois nombres étaient jusqu'ici
+   verrouillés ensemble par ce commentaire ; ils le sont désormais par le code —
+   width, margin et padding dérivent du MÊME token et suivent sa valeur. */
 .disclosure {
-  width: calc(100% + 28px);
-  margin-inline: -14px;
+  width: calc(100% + 2 * var(--s-6));
+  margin-inline: calc(-1 * var(--s-6));
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  row-gap: 3px;
+  row-gap: var(--s-1);
   min-height: 56px;
-  padding: 10px 14px;
+  padding: var(--s-4) var(--s-6);
   border: 0;
   background: none;
-  border-radius: 12px; /* même rayon que .choice et .segment */
+  border-radius: var(--r-control);
   text-align: left;
   cursor: pointer;
 }
 
 .disclosure:hover {
-  background: #fff;
+  background: var(--surface);
 }
 
 /* --text-2 sur --paper-3 = 7,32:1 · sur #fff au survol = 8,79:1 */
 .disclosure-label {
   grid-column: 1;
-  font-size: 13px;
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--text-2);
 }
@@ -785,22 +787,22 @@
 /* Le résumé ne doit JAMAIS être tronqué — c'est exactement le défaut qu'on
    corrige. Pas de nowrap, pas de text-overflow : il passe à la ligne.
    Pire cas « Tentatives libres · Lien valide 7 jours » ≈ 41 caractères à
-   11,5px ≈ 240px : tient sur une ligne dès 375px.
+   12px ≈ 250px : tient sur une ligne dès 375px.
    --text-3 (#6b6459) sur --paper-3 = 4,87:1 · sur #fff au survol = 5,85:1.
-   4,87:1 est conforme à 11,5px, taille qui n'ouvre droit à aucune exemption
+   4,87:1 est conforme à 12px, taille qui n'ouvre droit à aucune exemption
    « grand texte » (seuil 18,66px). */
 .disclosure-values {
   grid-column: 1;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   font-weight: 400;
-  line-height: 1.5;
+  line-height: var(--lh-snug);
   color: var(--text-3);
 }
 
 /* Le séparateur HÉRITE la couleur du résumé : aucun ratio propre à tenir, et il
    suit l'état is-custom sans règle supplémentaire. */
 .disclosure-sep {
-  margin: 0 6px;
+  margin: 0 var(--s-2);
 }
 
 /* Un réglage qui a quitté sa valeur par défaut ne peut plus être invisible,
@@ -826,7 +828,7 @@
 }
 
 /* Le tiroir ouvert s'enfonce d'un cran : il ne doit pas se relire comme un pair
-   de la carte blanche. 18px de gouttière contre 22px au niveau de .stack.
+   de la carte blanche. 16px de gouttière contre 22px au niveau de .stack.
    fade-in est déjà neutralisée par le bloc prefers-reduced-motion global
    (index.css l.154-161) : rien à ajouter ici.
    Contrastes sur ce fond --paper-2, tous vérifiés : .choice et .segment gardent
@@ -838,8 +840,8 @@
 .adv-panel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 16px 14px;
+  gap: var(--s-7);
+  padding: var(--s-7) var(--s-6);
   background: var(--paper-2);
   border-radius: var(--r-md);
   animation: fade-in 0.25s ease; /* keyframes existantes, plus haut */
@@ -858,10 +860,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-5);
   width: 100%;
-  padding: 14px 16px;
-  background: #fff;
+  padding: var(--s-6) var(--s-7);
+  background: var(--surface);
   border: 1px solid var(--line-control);
   border-radius: var(--r-md);
   text-align: left;
@@ -876,11 +878,11 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--s-1);
 }
 
 .recent-row-title {
-  font-size: 14px;
+  font-size: var(--t-body);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -888,7 +890,7 @@
 }
 
 .recent-row-meta {
-  font-size: 12px;
+  font-size: var(--t-micro);
   color: var(--text-3);
 }
 
@@ -896,15 +898,15 @@
 .progress-screen {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  padding: 30px 0;
+  gap: var(--s-12);
+  padding: var(--s-13) 0;
 }
 
 .progress-head {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: var(--s-7);
   text-align: center;
 }
 
@@ -913,13 +915,14 @@
    spécifique, soit un type, donc 0-1-1 comme « .progress-head h2 ». */
 .progress-head :is(h1, h2) {
   font-family: var(--serif);
-  font-size: 27px;
+  font-size: var(--d-screen);
   font-weight: 400;
+  line-height: var(--lh-display);
 }
 
 .progress-head p {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--t-body);
+  line-height: var(--lh-para);
   color: var(--text-2);
   max-width: 32ch;
 }
@@ -931,7 +934,7 @@
 .spinner {
   width: 46px;
   height: 46px;
-  border: 3px solid #efe7d5;
+  border: 3px solid var(--gold-track);
   border-top-color: var(--gold-line);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
@@ -948,27 +951,27 @@
 .steps {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--s-1);
 }
 
 .step {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: #fff;
+  gap: var(--s-5);
+  padding: var(--s-6) var(--s-7);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
 }
 
 .step-name {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--t-body);
   font-weight: 600;
 }
 
 .step-meta {
-  font-size: 12px;
+  font-size: var(--t-micro);
   color: var(--text-3);
 }
 
@@ -1008,7 +1011,7 @@
 }
 
 .step.is-todo .step-meta {
-  color: #797263;
+  color: var(--text-3-weak);
 }
 
 .step.is-doing {
@@ -1017,11 +1020,11 @@
 }
 
 .step.is-doing .step-name {
-  color: #4a3a12;
+  color: var(--gold-ink);
 }
 
 .step.is-doing .step-meta {
-  color: #7a6528;
+  color: var(--gold-deep);
 }
 
 .step.is-done .step-bullet {
@@ -1049,66 +1052,66 @@
 .bar-legend {
   display: flex;
   justify-content: space-between;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   color: var(--text-3);
-  margin-top: 8px;
+  margin-top: var(--s-3);
 }
 
 /* ---------- Écran 4 : relecture ---------- */
 .review-head {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 18px;
+  gap: var(--s-1);
+  margin-bottom: var(--s-8);
 }
 
 /* :is(h1, h2) — même précaution que .progress-head : le titre de l'écran de
    relecture passe de h2 à h1 (l'écran n'avait aucun niveau 1) et la règle doit
    suivre, sinon il retombe sur le défaut navigateur (2em gras sans-serif). */
 .review-head :is(h1, h2) {
-  font-size: 17px;
+  font-size: var(--t-lead);
   font-weight: 600;
 }
 
 .q-card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: var(--r-md);
+  padding: var(--s-7);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--s-5);
 }
 
 .q-card-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--s-4);
 }
 
 .q-card-num {
-  font-size: 11px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-caps);
   color: var(--text-3);
 }
 
 .q-card-tools {
   display: flex;
-  gap: 6px;
+  gap: var(--s-2);
 }
 
 .tool-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--s-2);
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 var(--s-4);
   border: 1px solid var(--line-control);
-  border-radius: 8px;
-  background: #fff;
-  font-size: 11.5px;
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  font-size: var(--t-micro);
   font-weight: 600;
   color: var(--text-2);
   cursor: pointer;
@@ -1125,8 +1128,8 @@
 }
 
 .q-card-text {
-  font-size: 14.5px;
-  line-height: 1.55;
+  font-size: var(--t-body);
+  line-height: var(--lh-text);
   color: var(--text);
   text-wrap: pretty;
 }
@@ -1140,36 +1143,36 @@
 .q-card-input {
   width: 100%;
   min-height: 76px;
-  padding: 12px 14px;
+  padding: var(--s-5) var(--s-6);
   border: 1.5px solid var(--gold-line);
-  border-radius: 12px;
-  font-size: 14.5px;
-  line-height: 1.55;
+  border-radius: var(--r-control);
+  font-size: var(--t-body);
+  line-height: var(--lh-text);
   resize: vertical;
   transition: box-shadow 0.18s;
 }
 
 .q-card-input:focus {
-  box-shadow: 0 0 0 3px rgba(200, 164, 90, 0.16);
+  box-shadow: 0 0 0 3px var(--gold-halo);
 }
 
 .q-options {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-2);
 }
 
 .q-option {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--s-3);
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--s-4) var(--s-5);
   border: 1px solid var(--line-control);
-  border-radius: 10px;
-  background: #fff;
-  font-size: 13.5px;
-  line-height: 1.45;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  font-size: var(--t-body);
+  line-height: var(--lh-snug);
   color: var(--text-2);
   text-align: left;
   cursor: pointer;
@@ -1239,10 +1242,10 @@
 .q-option-input {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
+  padding: var(--s-2) var(--s-3);
   border: 1px solid var(--line-control);
-  border-radius: 8px;
-  font-size: 13.5px;
+  border-radius: var(--r-xs);
+  font-size: var(--t-body);
 }
 
 .q-option-input:focus {
@@ -1259,30 +1262,30 @@
   position: sticky;
   bottom: 0;
   display: flex;
-  gap: 10px;
-  padding: 14px 0 calc(18px + env(safe-area-inset-bottom));
-  margin-top: 18px;
+  gap: var(--s-4);
+  padding: var(--s-6) 0 calc(var(--s-8) + env(safe-area-inset-bottom));
+  margin-top: var(--s-8);
   background: linear-gradient(to top, var(--paper-3) 72%, rgba(237, 234, 228, 0));
 }
 
 /* Variante en colonne : erreur, bouton pleine largeur, puis légende. Le
-   .btn-hint (11,5px, --text-3) tombe SOUS le bouton, donc dans les 72 % opaques
+   .btn-hint (12px, --text-3) tombe SOUS le bouton, donc dans les 72 % opaques
    du dégradé — 4,87:1 sur --paper-3 plein. Le bouton porte son propre aplat
    --gold, la zone de fondu ne l'affecte pas. */
 .sticky-actions--stacked {
   flex-direction: column;
-  gap: 8px;
+  gap: var(--s-3);
   margin-top: 0; /* la gouttière de 22px de .stack suffit ; sans cela 22 + 18 */
 }
 
 /* WCAG 2.4.11 — un contrôle qui prend le focus en fin de zone défilable ne doit
    pas se retrouver SOUS la barre collante. 140px = hauteur type de la barre au
-   repos (14 + 52 + 8 + 17 + 18 = 109) plus la marge du cas « message d'erreur ».
+   repos (14 + 52 + 8 + 17,4 + 18 = 109,4) plus la marge du cas « message d'erreur ».
    Ciblé sur les seuls contrôles concernés : volontairement PAS de
    scroll-padding-bottom global sur html, qui frapperait aussi l'écran de
    passation en thème encre. */
 /* Le dégagement doit couvrir la barre dans son état le PLUS HAUT, pas au repos.
-   La barre mesure ~109 px tant qu'aucun message n'y figure, mais l'.error-slot
+   La barre mesure ~109,4 px tant qu'aucun message n'y figure, mais l'.error-slot
    qu'elle contient entre en flux dès qu'une erreur arrive : elle monte alors à
    185-206 px. Calibrer sur l'état de repos laissait le contrôle focalisé caché
    derrière la barre au moment précis où un message explique quoi corriger.
@@ -1298,13 +1301,13 @@
 .meta-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s-4);
   flex-wrap: wrap;
-  padding: 12px 14px;
-  background: #fff;
+  padding: var(--s-5) var(--s-6);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
-  font-size: 12.5px;
+  font-size: var(--t-label);
   color: var(--text-2);
 }
 
@@ -1318,16 +1321,16 @@
   margin-left: auto;
   background: none;
   border: 0;
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: 12.5px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-xs);
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--err);
   cursor: pointer;
 }
 
 /* Le survol est un état de fonctionnement normal, soumis à WCAG 1.4.3 : garder
-   --err sur --err-bg faisait tomber le libellé (12,5px / 600) à 4,24:1. La
+   --err sur --err-bg faisait tomber le libellé (13px / 600) à 4,24:1. La
    couleur bascule donc avec le fond — --err-text sur --err-bg = 6,63:1, contre
    5,05:1 pour --err sur le blanc de la .meta-row au repos. */
 .btn-danger-link:hover {
@@ -1338,14 +1341,14 @@
 .notice {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 12px 14px;
+  gap: var(--s-3);
+  padding: var(--s-5) var(--s-6);
   border-radius: var(--r-sm);
   background: var(--gold-soft);
   border: 1px solid var(--gold-border);
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: #4a3a12;
+  font-size: var(--t-label);
+  line-height: var(--lh-text);
+  color: var(--gold-ink);
 }
 
 .notice .icon {
@@ -1354,14 +1357,14 @@
   color: var(--gold-deep);
 }
 
-/* 11,5px : aucune exemption « grand texte » (seuil 18,66px). L'alpha 0,35 ne
+/* 12px : aucune exemption « grand texte » (seuil 18,66px). L'alpha 0,35 ne
    donnait que 3,23:1 sur --ink-deep ; 0,55 donne 6,12:1. */
 .kbd-hint {
   display: none;
   align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.55);
+  gap: var(--s-3);
+  font-size: var(--t-micro);
+  color: var(--on-ink-2);
 }
 
 .kbd {
@@ -1370,11 +1373,11 @@
   justify-content: center;
   min-width: 20px;
   height: 20px;
-  padding: 0 5px;
+  padding: 0 var(--s-2);
   border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--t-micro);
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -1382,56 +1385,56 @@
 .share-badge {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--s-2);
   align-self: flex-start;
-  padding: 6px 11px;
-  border-radius: 999px;
+  padding: var(--s-2) var(--s-5);
+  border-radius: var(--r-pill);
   background: var(--ok-bg);
   color: var(--ok-text);
-  font-size: 12px;
+  font-size: var(--t-micro);
   font-weight: 600;
 }
 
 .share-title {
   font-family: var(--serif);
-  font-size: 28px;
+  font-size: var(--d-screen);
   font-weight: 400;
-  line-height: 1.15;
+  line-height: var(--lh-display);
 }
 
 .qr-frame {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 22px;
-  background: #fff;
+  gap: var(--s-5);
+  padding: var(--s-10);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   line-height: 0;
 }
 
 .qr-label {
-  font-size: 12.5px;
+  font-size: var(--t-label);
   color: var(--text-3);
-  line-height: 1.4;
+  line-height: var(--lh-snug);
 }
 
 .link-row {
   display: flex;
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .link-input {
   flex: 1;
   min-width: 0;
-  min-height: 50px;
-  padding: 0 14px;
+  min-height: var(--h-action);
+  padding: 0 var(--s-6);
   background: var(--paper-2);
   border: 1px solid var(--line-control);
-  border-radius: 12px;
+  border-radius: var(--r-control);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--t-label);
   color: var(--text-2);
 }
 
@@ -1439,13 +1442,13 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 50px;
-  padding: 0 16px;
+  gap: var(--s-2);
+  min-height: var(--h-action);
+  padding: 0 var(--s-7);
   border: 1.5px solid var(--gold-line);
-  border-radius: 12px;
-  background: #fff;
-  font-size: 14px;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  font-size: var(--t-body);
   font-weight: 600;
   color: var(--gold-deep);
   cursor: pointer;
@@ -1455,12 +1458,12 @@
 .btn-copy.is-copied {
   background: var(--ok);
   border-color: var(--ok);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 .split-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--s-4);
 }
 
 .split-actions > * {
@@ -1473,22 +1476,22 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 30px;
+  gap: var(--s-12);
   min-height: 74dvh;
 }
 
 .welcome-title {
   font-family: var(--serif);
-  font-size: 36px;
+  font-size: var(--d-hero);
   font-weight: 400;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
+  line-height: var(--lh-display);
+  letter-spacing: var(--ls-display);
 }
 
 .welcome-eyebrow {
-  font-size: 12px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--ls-caps);
   text-transform: uppercase;
   color: var(--gold-deep);
 }
@@ -1504,28 +1507,28 @@
   display: flex;
   flex-direction: column;
   background: var(--ink-deep);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 .quiz-top {
-  padding: 18px 20px 14px;
+  padding: var(--s-8) var(--s-9) var(--s-6);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--s-7);
 }
 
 .quiz-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-5);
 }
 
 .quiz-doc {
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--ls-caps);
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.58);
   white-space: nowrap;
@@ -1535,7 +1538,7 @@
 
 .quiz-count {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--gold-light);
   font-variant-numeric: tabular-nums;
@@ -1547,7 +1550,7 @@
 .quiz-ticks {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--s-1);
 }
 
 /* Chaque tick est un BOUTON, et le seul porteur visuel de l'avancement : les
@@ -1581,31 +1584,35 @@
 
 .tick.is-current {
   height: 5px;
-  background: #fff;
+  background: var(--on-ink);
 }
 
 .quiz-body {
   flex: 1;
-  padding: 20px 20px 8px;
+  padding: var(--s-9) var(--s-9) var(--s-3);
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: var(--s-12);
 }
 
 .quiz-question {
   font-family: var(--serif);
-  font-size: 27px;
+  font-size: var(--d-question);
   font-weight: 400;
-  line-height: 1.28;
+  line-height: var(--lh-question);
+  /* Tracking PROPRE, volontairement hors de --ls-display. Cette règle n'est pas
+     un titre d'écran mais du CONTENU : c'est la question elle-même, sur l'écran
+     le plus fréquenté de l'application, avec son propre palier responsive
+     (--d-question). --ls-display vaut -0,01em et doublerait le resserrement. */
   letter-spacing: -0.005em;
-  color: #fff;
+  color: var(--on-ink);
   text-wrap: pretty;
 }
 
 .quiz-options {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: var(--s-3);
 }
 
 /* Contour : 1,49:1 → 3,73:1 sur son propre aplat (4,22:1 sur --ink-deep).
@@ -1631,16 +1638,16 @@
 .opt {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--s-5);
   width: 100%;
   min-height: 60px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
+  padding: var(--s-5) var(--s-7);
+  background: var(--ink-surface);
   border: 1px solid var(--line-control-ink);
   border-radius: var(--r-md);
   color: rgba(255, 255, 255, 0.88);
-  font-size: 15px;
-  line-height: 1.45;
+  font-size: var(--t-control);
+  line-height: var(--lh-snug);
   text-align: left;
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s, color 0.16s, transform 0.12s;
@@ -1665,7 +1672,7 @@
    FORME — rien → disque plein, 4,46:1 face à l'aplat sélectionné — donc plus
    large qu'avant les lots au lieu de plus étroit. La lettre reste seule porteuse
    d'information : 6,57:1 au repos et 6,08:1 au survol, au-dessus des 4,5:1 dus
-   à 12,5px/700, et --ink-deep sur le disque doré donne 7,64:1. */
+   à 13px/700, et --ink-deep sur le disque doré donne 7,64:1. */
 .opt-letter {
   display: inline-flex;
   align-items: center;
@@ -1674,7 +1681,7 @@
   height: 30px;
   border-radius: 50%;
   border: 0;
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.6);
   flex-shrink: 0;
@@ -1691,7 +1698,7 @@
   background: rgba(200, 164, 90, 0.28);
   border-width: 1.5px;
   border-color: var(--gold-light);
-  color: #fff;
+  color: var(--on-ink);
   font-weight: 600;
 }
 
@@ -1710,8 +1717,8 @@
   bottom: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 20px calc(18px + env(safe-area-inset-bottom));
+  gap: var(--s-4);
+  padding: var(--s-6) var(--s-9) calc(var(--s-8) + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   background: var(--ink-deep);
 }
@@ -1720,14 +1727,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 52px;
-  padding: 0 18px;
+  gap: var(--s-3);
+  min-height: var(--h-action);
+  padding: 0 var(--s-8);
   border: 1px solid var(--line-control-ink);
   border-radius: var(--r-md);
   background: none;
   color: rgba(255, 255, 255, 0.75);
-  font-size: 15px;
+  font-size: var(--t-control);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.18s;
@@ -1737,7 +1744,7 @@
    devenue celle du repos, d'où la bascule sur le token de survol. 3,83 → 7,45:1. */
 .btn-ink-ghost:hover:not(:disabled) {
   border-color: var(--line-control-ink-hover);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 .btn-ink-ghost:disabled {
@@ -1746,7 +1753,7 @@
 }
 
 .btn-ink-ghost--icon {
-  width: 52px;
+  width: var(--h-action);
   padding: 0;
   flex-shrink: 0;
 }
@@ -1756,14 +1763,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 0 20px;
+  gap: var(--s-4);
+  min-height: var(--h-action);
+  padding: 0 var(--s-9);
   border: 0;
   border-radius: var(--r-md);
   background: var(--gold);
   color: var(--ink-deep);
-  font-size: 15.5px;
+  font-size: var(--t-control);
   font-weight: 700;
   cursor: pointer;
   transition: background 0.18s, transform 0.12s;
@@ -1787,22 +1794,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 0 20px;
-  padding: 10px 14px;
+  gap: var(--s-5);
+  margin: 0 var(--s-9);
+  padding: var(--s-4) var(--s-6);
   background: rgba(200, 164, 90, 0.14);
   border: 1px solid rgba(200, 164, 90, 0.35);
-  border-radius: 12px;
-  font-size: 13px;
+  border-radius: var(--r-control);
+  font-size: var(--t-label);
   color: var(--gold-light);
 }
 
 .link-btn {
   background: none;
   border: 0;
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: 13px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-xs);
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--gold-light);
   cursor: pointer;
@@ -1810,16 +1817,16 @@
 }
 
 .link-btn:hover {
-  background: rgba(200, 164, 90, 0.18);
+  background: var(--gold-fill-soft);
 }
 
 /* Récapitulatif de fin */
 .recap {
   flex: 1;
-  padding: 26px 20px;
+  padding: var(--s-12) var(--s-9);
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: var(--s-10);
 }
 
 /* :is(h1, h2) — l'écran de récapitulatif REMPLACE .quiz-body, seul porteur du
@@ -1828,17 +1835,17 @@
    .progress-head et .review-head avant lui. Spécificité inchangée : :is() prend
    celle de son argument le plus spécifique, soit un type, donc 0-1-1 comme
    « .recap h2 ». Sans cette précaution le titre retomberait sur le défaut
-   navigateur (2em gras sans-serif) au lieu du serif 30px. */
+   navigateur (2em gras sans-serif) au lieu du serif 28px. */
 .recap :is(h1, h2) {
   font-family: var(--serif);
-  font-size: 30px;
+  font-size: var(--d-screen);
   font-weight: 400;
-  line-height: 1.15;
+  line-height: var(--lh-display);
 }
 
 .recap p {
-  font-size: 14.5px;
-  line-height: 1.6;
+  font-size: var(--t-body);
+  line-height: var(--lh-para);
   color: rgba(255, 255, 255, 0.6);
   text-wrap: pretty;
 }
@@ -1846,19 +1853,19 @@
 .recap-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 /* Contour : 1,65:1 → 3,73:1 sur son propre aplat (4,22:1 sur --ink-deep).
    L'aplat doré de .is-answered est la surface la plus exigeante du thème :
    rgba(200,164,90,.5) n'y donnait que 2,51:1, --gold-line-ink donne 5,55:1. */
 .recap-cell {
-  min-height: 48px;
-  border-radius: 12px;
+  min-height: var(--h-grid);
+  border-radius: var(--r-control);
   border: 1px solid var(--line-control-ink);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 13px;
+  background: var(--ink-surface);
+  color: var(--on-ink-2);
+  font-size: var(--t-label);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -1867,11 +1874,11 @@
 
 .recap-cell:hover {
   border-color: var(--gold-line-ink);
-  color: #fff;
+  color: var(--on-ink);
 }
 
 .recap-cell.is-answered {
-  background: rgba(200, 164, 90, 0.18);
+  background: var(--gold-fill-soft);
   border-color: var(--gold-line-ink);
   color: var(--gold-light);
 }
@@ -1885,41 +1892,41 @@
 .recap-missing {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
+  gap: var(--s-3);
+  padding: var(--s-7);
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ink-surface);
   border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .recap-missing-title {
-  font-size: 13px;
+  font-size: var(--t-label);
   font-weight: 700;
   color: var(--gold-light);
 }
 
 .recap-missing-list {
   display: flex;
-  gap: 8px;
+  gap: var(--s-3);
   flex-wrap: wrap;
 }
 
 /* Fond transparent : le contour se lit sur l'aplat de .recap-missing.
    rgba(200,164,90,.45) n'y donnait que 2,47:1, --gold-line-ink donne 6,74:1. */
 .recap-missing-chip {
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
+  min-height: var(--h-chip);
+  padding: 0 var(--s-5);
+  border-radius: var(--r-pill);
   border: 1px solid var(--gold-line-ink);
   background: none;
   color: var(--gold-light);
-  font-size: 13px;
+  font-size: var(--t-label);
   font-weight: 600;
   cursor: pointer;
 }
 
 .recap-missing-chip:hover {
-  background: rgba(200, 164, 90, 0.18);
+  background: var(--gold-fill-soft);
 }
 
 /* Feuille « toutes les questions » */
@@ -1937,13 +1944,13 @@
   width: 100%;
   max-height: 76dvh;
   overflow-y: auto;
-  background: #201e26;
+  background: var(--ink-sheet);
   border-top-left-radius: var(--r-xl);
   border-top-right-radius: var(--r-xl);
-  padding: 20px 20px calc(24px + env(safe-area-inset-bottom));
+  padding: var(--s-9) var(--s-9) calc(var(--s-11) + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--s-7);
   animation: sheet-up 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -1962,7 +1969,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-5);
 }
 
 /* :is(h2, h3) — les deux surfaces role="dialog" (.sheet ici, .modal plus bas)
@@ -1973,9 +1980,9 @@
    par-dessus .quiz, qui porte déjà le niveau 1 (.quiz-question) — h2 est donc le
    seul autre niveau plausible. Spécificité inchangée (0-1-1). */
 .sheet-head :is(h2, h3) {
-  font-size: 16px;
+  font-size: var(--t-lead);
   font-weight: 600;
-  color: #fff;
+  color: var(--on-ink);
 }
 
 /* Contrôle oublié par le balayage du thème encre : la plaque
@@ -1989,10 +1996,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: var(--h-chip);
+  height: var(--h-chip);
   border: 1px solid var(--line-control-ink);
-  border-radius: 10px;
+  border-radius: var(--r-sm);
   background: none;
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
@@ -2001,7 +2008,7 @@
 .sheet-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-2);
 }
 
 /* Contour sur le fond de la .sheet (#201e26) : 1,43:1 → 4,06:1 (3,63:1 sur son
@@ -2009,16 +2016,16 @@
 .sheet-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-5);
   width: 100%;
-  min-height: 52px;
-  padding: 10px 14px;
+  min-height: var(--h-action);
+  padding: var(--s-4) var(--s-6);
   border: 1px solid var(--line-control-ink);
-  border-radius: 12px;
+  border-radius: var(--r-control);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
-  line-height: 1.4;
+  font-size: var(--t-body);
+  line-height: var(--lh-snug);
   text-align: left;
   cursor: pointer;
 }
@@ -2060,9 +2067,9 @@
 .sheet-row-num {
   flex-shrink: 0;
   width: 26px;
-  font-size: 12px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--on-ink-2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2075,14 +2082,14 @@
   overflow: hidden;
 }
 
-/* 11,5px / 700 : l'alpha 0,35 ne donnait que 3,12:1 sur #29272f ; 0,55 = 5,52:1,
+/* 12px / 700 : l'alpha 0,35 ne donnait que 3,12:1 sur #29272f ; 0,55 = 5,52:1,
    et 4,68:1 sur l'aplat doré de .sheet-row.is-current. */
 .sheet-row-state {
   flex-shrink: 0;
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: var(--ls-caps);
+  color: var(--on-ink-2);
 }
 
 .sheet-row.is-answered .sheet-row-state {
@@ -2098,7 +2105,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: var(--s-9);
   animation: fade-in 0.2s ease;
 }
 
@@ -2108,13 +2115,13 @@
   --focus-ring: var(--gold-line);
   width: 100%;
   max-width: 420px;
-  background: #fff;
-  border-radius: 18px;
-  padding: 26px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  padding: var(--s-12);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--s-7);
   animation: scale-in 0.22s ease;
 }
 
@@ -2132,19 +2139,20 @@
 /* :is(h2, h3) — voir .sheet-head : même dialogue, même promotion possible. */
 .modal :is(h2, h3) {
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: var(--d-dialog);
   font-weight: 400;
+  line-height: var(--lh-display);
 }
 
 .modal p {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--t-body);
+  line-height: var(--lh-para);
   color: var(--text-2);
 }
 
 .modal-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--s-4);
 }
 
 .modal-actions > * {
@@ -2158,19 +2166,19 @@
 }
 
 .score-hero {
-  padding: 32px 24px 26px;
+  padding: var(--s-13) var(--s-11) var(--s-12);
   background: var(--ink);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: var(--s-7);
   text-align: center;
 }
 
 .score-who {
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-caps);
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.5);
 }
@@ -2194,52 +2202,52 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--s-1);
 }
 
 .score-value {
   font-family: var(--serif);
-  font-size: 44px;
+  font-size: var(--d-score);
   line-height: 1;
-  color: #fff;
+  color: var(--on-ink);
   font-variant-numeric: tabular-nums;
 }
 
 .score-total {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: var(--t-label);
+  color: var(--on-ink-2);
 }
 
 .score-grade {
   font-family: var(--serif);
-  font-size: 24px;
+  font-size: var(--d-grade);
 }
 
 .results-body {
-  padding: 20px 18px 40px;
+  padding: var(--s-9) var(--s-8) var(--s-14);
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--s-7);
 }
 
 .results-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .results-actions > .btn {
   flex: 1;
-  min-height: 48px;
-  padding: 0 12px;
-  font-size: 13.5px;
+  min-height: var(--h-grid);
+  padding: 0 var(--s-5);
+  font-size: var(--t-body);
 }
 
 .results-actions > .btn--icon {
-  flex: 0 0 48px;
-  width: 48px;
+  flex: 0 0 var(--h-grid);
+  width: var(--h-grid);
   padding: 0;
 }
 
@@ -2247,32 +2255,32 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--s-5);
 }
 
 .review-bar-title {
-  font-size: 13px;
+  font-size: var(--t-label);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--ls-caps);
   text-transform: uppercase;
   color: var(--text-3);
 }
 
 .review-bar-count {
-  font-size: 12.5px;
+  font-size: var(--t-label);
   font-weight: 600;
   color: var(--gold-deep);
 }
 
 .r-card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-left: 3px solid var(--ok);
   border-radius: var(--r-md);
-  padding: 15px;
+  padding: var(--s-6);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--s-4);
   animation: fade-in 0.3s ease;
 }
 
@@ -2283,7 +2291,7 @@
 .r-card-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--s-3);
 }
 
 .r-badge {
@@ -2304,15 +2312,15 @@
 }
 
 .r-card-num {
-  font-size: 11.5px;
+  font-size: var(--t-micro);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-caps);
   color: var(--text-3);
 }
 
 .r-question {
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: var(--t-body);
+  line-height: var(--lh-text);
   color: var(--text);
   text-wrap: pretty;
 }
@@ -2320,16 +2328,16 @@
 .r-answers {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--s-2);
 }
 
 .r-answer {
   display: flex;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.5;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-sm);
+  font-size: var(--t-label);
+  line-height: var(--lh-snug);
 }
 
 .r-answer b {
@@ -2338,7 +2346,7 @@
 }
 
 .r-answer--mine {
-  background: #fdf3f2;
+  background: var(--err-bg-soft);
   color: var(--err-text);
 }
 
@@ -2349,13 +2357,13 @@
 
 .r-explain {
   display: flex;
-  gap: 9px;
-  padding: 11px 13px;
-  border-radius: 10px;
+  gap: var(--s-3);
+  padding: var(--s-5);
+  border-radius: var(--r-sm);
   background: var(--gold-soft);
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: #4a3a12;
+  font-size: var(--t-label);
+  line-height: var(--lh-text);
+  color: var(--gold-ink);
 }
 
 .r-explain .icon {
@@ -2400,12 +2408,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--s-5);
   text-align: center;
-  padding: 48px 24px;
+  padding: var(--s-15) var(--s-11);
   margin: 24px auto 0;
   max-width: 420px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
 }
@@ -2419,7 +2427,7 @@
   border-radius: 50%;
   background: var(--paper-2);
   color: var(--text-3);
-  margin-bottom: 4px;
+  margin-bottom: var(--s-1);
 }
 
 /* :is(h1, h2) — .empty-state est monté SEUL sous l'AppBar (QuizPage.jsx : quiz
@@ -2428,13 +2436,14 @@
    Spécificité inchangée (0-1-1), même raisonnement que .progress-head. */
 .empty-state :is(h1, h2) {
   font-family: var(--serif);
-  font-size: 26px;
+  font-size: var(--d-screen);
   font-weight: 400;
+  line-height: var(--lh-display);
 }
 
 .empty-state p {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--t-body);
+  line-height: var(--lh-para);
   color: var(--text-2);
 }
 
@@ -2443,10 +2452,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: var(--s-7);
   min-height: 70dvh;
   color: var(--text-3);
-  font-size: 14px;
+  font-size: var(--t-body);
 }
 
 @media (min-width: 720px) {
@@ -2460,7 +2469,7 @@
   }
 
   .quiz-question {
-    font-size: 32px;
+    font-size: var(--d-question-lg);
   }
 
   .kbd-hint {
@@ -2468,6 +2477,6 @@
   }
 
   .score-hero {
-    padding: 44px 24px 34px;
+    padding: var(--s-14) var(--s-11) var(--s-13);
   }
 }
