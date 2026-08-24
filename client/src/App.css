@@ -266,6 +266,17 @@
   color: var(--text-2);
 }
 
+/* Titre à gauche, accès secondaire à droite, alignés sur la même ligne de base.
+   Cette règle avait été supprimée par le lot de cohérence alors qu'elle n'était
+   utilisée nulle part, puis employée à nouveau dans l'écran de création sans
+   être réécrite : le lien « Résultats » tombait donc SOUS le titre. */
+.field-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-5);
+}
+
 /* Palier 1 — LA DÉCISION. Le nombre de questions et le niveau sont les deux
    seuls réglages qui pilotent ce que le modèle écrit : s'y tromper impose une
    régénération payante, alors que tentatives et validité se rattrapent après
