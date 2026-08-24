@@ -9,20 +9,36 @@ const envPath = path.join(__dirname, '..', '..', '.env');
 try { require('dotenv').config({ path: envPath, override: true }); } catch {};
 
 const cors = require('cors');
+const { nameKey } = require('./name-key');
+const { parsePeriode } = require('./periode');
 
 // Si le stockage SQLite refuse de se charger (runtime sans node:sqlite), on
 // bascule sur un store en mémoire plutôt que de laisser mourir le serveur :
 // mieux vaut un site debout sans persistance qu'un site inaccessible.
+//
+// UNE SEULE EXCEPTION : une migration ratée. Le repli est fait pour un runtime
+// incapable de charger node:sqlite, pas pour une base qui existe et qu'on n'a
+// pas su faire évoluer. Sans cette distinction, un ALTER TABLE en échec ferait
+// basculer la production en mémoire — le serveur répondrait, les quiz seraient
+// créables, et tout serait perdu au redémarrage suivant, sans un bruit. On
+// meurt bruyamment : c'est la panne la plus réparable des deux.
 let store;
 try {
   store = require('./db');
 } catch (err) {
+  if (err.code === 'MIGRATION_FAILED') throw err;
   console.error('SQLite indisponible — bascule en mémoire, données NON persistées.');
   console.error(`  cause : ${err.message}`);
   store = require('./db-memory');
 }
 
 const app = express();
+// 1 et NON true. `true` fait confiance à toute la chaîne X-Forwarded-For, donc
+// à l'en-tête que le client écrit lui-même : n'importe qui pourrait se donner
+// une IP neuve à chaque requête et pulvériser la limitation de débit de la
+// route publique de suggestions. `1` ne fait confiance qu'au dernier relais —
+// celui de l'hébergeur, le seul que nous contrôlons.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
@@ -497,14 +513,36 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     return res.status(400).json({ error: 'Nom et réponses requis' });
   }
 
+  // La garde ci-dessus laisse passer «    » : une chaîne d'espaces est
+  // parfaitement « truthy ». Avant l'annuaire, cela ne produisait qu'une ligne de
+  // résultat au nom vide ; désormais cela ferait NAÎTRE une fiche à name_key vide,
+  // qui adopterait ensuite toutes les saisies vides suivantes — une personne
+  // fictive, cumulant les notes de plusieurs vrais apprenants. On resserre ici, au
+  // seul endroit où une fiche peut naître côté public.
+  const nomSaisi = String(playerName).trim();
+  if (!nameKey(nomSaisi)) {
+    return res.status(400).json({ error: 'Entrez votre nom pour envoyer vos réponses' });
+  }
+
   const availability = quizAvailability(quiz);
   if (!availability.ok) {
     return res.status(availability.status).json({ error: availability.error });
   }
 
+  // Fiche déjà connue sous ce nom, ou null. resolveLearner ne crée JAMAIS rien :
+  // la création se fait plus bas, une fois la copie acceptée.
+  const existante = store.resolveLearner(nomSaisi);
+
   // Tentative unique : on refuse un second envoi sous le même prénom
   if (quiz.singleAttempt !== false) {
-    const previous = store.findResultByName(req.params.id, playerName);
+    // Double contrôle volontaire. Par fiche d'abord : c'est la seule voie qui
+    // reconnaisse quelqu'un renommé depuis sa participation. Par clé de nom
+    // ensuite : elle rattrape les lignes antérieures à l'annuaire restées à
+    // learner_id NULL si la reprise n'a pas encore tourné. Deux points lookups
+    // indexés, le coût est nul.
+    const previous =
+      (existante && store.findResultByLearner(req.params.id, existante.id)) ||
+      store.findResultByName(req.params.id, nomSaisi);
     if (previous) {
       return res.status(409).json({
         error: `Une réponse a déjà été enregistrée pour ${previous.playerName} (${previous.score}/${previous.total}). Ce quiz n’autorise qu’une tentative.`,
@@ -530,17 +568,26 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     };
   });
 
+  // Seule porte de création d'une fiche côté apprenant, et par EFFET DE BORD de
+  // l'envoi des réponses : il n'existe aucune route publique dédiée qu'un curieux
+  // pourrait marteler pour peupler ou sonder l'annuaire. Une fiche déjà là est
+  // adoptée, et si elle dormait en quarantaine (import), elle est promue.
+  const { learner: fiche } = store.ensureLearner(nomSaisi);
+
   store.addResult(req.params.id, {
-    playerName,
+    playerName: nomSaisi,
     score,
     total: quiz.questions.length,
     submittedAt: new Date().toISOString(),
+    learnerId: fiche.id,
   });
 
-  console.log(`${playerName} scored ${score}/${quiz.questions.length} on quiz ${req.params.id}`);
+  console.log(`${nomSaisi} scored ${score}/${quiz.questions.length} on quiz ${req.params.id}`);
 
+  // Corps de réponse INCHANGÉ, champ pour champ : aucune modification du client
+  // n'est requise sur ce chemin.
   res.json({
-    playerName,
+    playerName: nomSaisi,
     score,
     total: quiz.questions.length,
     correction,
@@ -579,6 +626,331 @@ app.get('/api/quiz/:id/results', requireAdmin, (req, res) => {
     results: store.listResults(req.params.id),
     stockage: etatStockage(),
   });
+});
+
+// =============================================================================
+// Annuaire des apprenants
+//
+// Ces routes sont déclarées AVANT le repli SPA : `app.get('{*splat}')` attrape
+// tout ce qui le précède pas, et renverrait index.html à la place du JSON.
+// =============================================================================
+
+/**
+ * VERROU. requireAdmin laisse passer TOUT LE MONDE quand ADMIN_PASSWORD est
+ * vide — c'est le confort du développement local. Jusqu'ici cet oubli exposait
+ * des titres de quiz ; il exposerait désormais un dossier de performance
+ * NOMINATIF, apprenant par apprenant, note par note.
+ *
+ * On ne tue pas l'application au démarrage pour autant : la variable peut
+ * manquer sur un déploiement où le quiz, lui, doit continuer de tourner. Seul
+ * l'annuaire est scellé. Le quiz se crée, se partage et se répond comme avant.
+ */
+function requireAnnuaire(req, res, next) {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({
+      error:
+        'L’annuaire des apprenants est scellé : aucun mot de passe formateur n’est ' +
+        'configuré sur ce serveur. Définissez la variable d’environnement ' +
+        'ADMIN_PASSWORD puis redéployez. Le quiz reste utilisable en attendant.',
+      annuaireScelle: true,
+    });
+  }
+  next();
+}
+
+// --- Limitation de débit de la route publique de suggestions -----------------
+// Seau à jetons par IP : 20 d'avance, 2 par seconde ensuite. Un apprenant tape
+// son nom en quelques frappes et n'en verra jamais le bord ; un script qui
+// balaie l'alphabet le touche en une seconde.
+const SEAU_CAPACITE = 20;
+const SEAU_RECHARGE_PAR_SECONDE = 2;
+// La Map est elle-même un vecteur de saturation : une IP par requête forgée, et
+// c'est la mémoire du serveur qui tombe au lieu de l'annuaire. Au-delà de ce
+// seuil on purge ce qui dort — un seau plein est un seau qu'on peut oublier.
+const SEAU_MAX_ENTREES = 5000;
+const SEAU_INACTIF_MS = 60 * 1000;
+
+const seaux = new Map();
+
+function consommerJeton(ip) {
+  const maintenant = Date.now();
+
+  if (seaux.size > SEAU_MAX_ENTREES) {
+    for (const [cle, seau] of seaux) {
+      if (maintenant - seau.vuA > SEAU_INACTIF_MS) seaux.delete(cle);
+    }
+  }
+
+  let seau = seaux.get(ip);
+  if (!seau) {
+    seau = { jetons: SEAU_CAPACITE, vuA: maintenant };
+    seaux.set(ip, seau);
+  } else {
+    const ecouleSecondes = (maintenant - seau.vuA) / 1000;
+    seau.jetons = Math.min(
+      SEAU_CAPACITE,
+      seau.jetons + ecouleSecondes * SEAU_RECHARGE_PAR_SECONDE
+    );
+    seau.vuA = maintenant;
+  }
+
+  if (seau.jetons < 1) return false;
+  seau.jetons -= 1;
+  return true;
+}
+
+// Liste blanche appliquée à la clé de nom, pas à la saisie brute. Ce n'est PAS
+// un confort de validation : c'est la condition de sûreté du GLOB employé par
+// le store, qui n'a pas de clause ESCAPE. Un « * » tapé dans le champ
+// deviendrait un joker et retournerait l'annuaire entier.
+const CLE_SUGGESTION = /^[a-z][a-z '-]*$/;
+
+// Trois caractères minimum. À deux, les ~676 bigrammes couvrent tout l'espace
+// alphabétique : quelques centaines de requêtes suffiraient à reconstituer
+// l'annuaire complet. À trois, l'espace est deux ordres de grandeur plus grand
+// que ce que le seau à jetons laisse passer.
+const SUGGESTION_MIN = 3;
+const SUGGESTION_MAX = 5;
+
+/**
+ * GET /api/learners/suggest — PUBLIQUE.
+ *
+ * Réponse toujours { suggestions: [...] }, un tableau de CHAÎNES : ni
+ * identifiant, ni moyenne, ni date, ni provenance. 200 dans tous les cas
+ * nominaux — jamais 404, jamais 401, jamais 410. Chaque code distinct serait un
+ * oracle : « ce quiz existe mais il est fermé », « ce préfixe est invalide ».
+ * Un tableau vide ne dit rien de plus que l'absence de réponse.
+ */
+app.get('/api/learners/suggest', (req, res) => {
+  // Un annuaire nominatif n'a rien à faire dans un cache partagé.
+  res.setHeader('Cache-Control', 'no-store');
+
+  if (!consommerJeton(req.ip || 'inconnue')) {
+    return res
+      .status(429)
+      .json({ error: 'Trop de requêtes. Patientez quelques secondes avant de reprendre.' });
+  }
+
+  const vide = { suggestions: [] };
+
+  // Contrôles de la saisie d'abord : ils ne coûtent aucune lecture de base.
+  const cle = nameKey(req.query.q);
+  if (cle.length < SUGGESTION_MIN) return res.json(vide);
+  if (!CLE_SUGGESTION.test(cle)) return res.json(vide);
+
+  // Le quiz est la clé de la porte. Sonder l'annuaire suppose de détenir un lien
+  // de quiz VIVANT : quand le formateur ferme le quiz ou le laisse expirer, la
+  // surface d'exposition disparaît d'elle-même, sans intervention.
+  const quizId = typeof req.query.quizId === 'string' ? req.query.quizId : '';
+  if (!quizId) return res.json(vide);
+
+  const quiz = store.getQuiz(quizId);
+  if (!quiz || !quizAvailability(quiz).ok) return res.json(vide);
+
+  res.json({ suggestions: store.suggestLearners(cle, SUGGESTION_MAX) });
+});
+
+/**
+ * Site UNIQUE d'arrondi des moyennes. Les deux stores renvoient des flottants
+ * bruts ; arrondir ici, et nulle part ailleurs, est ce qui garantit que SQLite
+ * et le store en mémoire affichent le même nombre pour les mêmes notes.
+ * null reste null : une moyenne absente n'est pas une moyenne de zéro.
+ */
+function arrondirPourcent(valeur) {
+  if (valeur === null || valeur === undefined) return null;
+  if (!Number.isFinite(valeur)) return null;
+  return Math.round(valeur * 10) / 10;
+}
+
+/**
+ * Moyenne DES POURCENTAGES : chaque évaluation compte pour une, qu'elle porte
+ * sur 5 questions ou sur 30. Ce n'est pas somme(scores)/somme(totaux), qui
+ * pondérerait par la longueur du QCM. Les évaluations à total nul sont ignorées
+ * du calcul mais comptées comme tentatives, exactement comme le fait le
+ * CASE WHEN total > 0 de la requête SQL.
+ */
+function resumeDesEvaluations(evaluations) {
+  let attempts = 0;
+  let somme = 0;
+  let comptees = 0;
+
+  for (const e of evaluations) {
+    attempts += 1;
+    if (e.total > 0) {
+      somme += (e.score * 100) / e.total;
+      comptees += 1;
+    }
+  }
+
+  return { attempts, avgPercent: comptees > 0 ? somme / comptees : null };
+}
+
+// L'annuaire, avec la synthèse de chacun sur la période demandée.
+app.get('/api/learners', requireAnnuaire, requireAdmin, (req, res) => {
+  const periode = parsePeriode(req.query);
+  if (!periode.ok) return res.status(400).json({ error: periode.error });
+
+  const learners = store
+    .listLearners({ from: periode.from, to: periode.toExclusive })
+    .map((l) => ({
+      id: l.id,
+      displayName: l.displayName,
+      createdBy: l.createdBy,
+      suggestible: l.suggestible,
+      createdAt: l.createdAt,
+      attempts: l.attempts,
+      avgPercent: arrondirPourcent(l.avgPercent),
+      lastSubmittedAt: l.lastSubmittedAt,
+    }));
+
+  // Clés posées dans l'ordre du contrat. `periode` est omise quand le formateur
+  // n'a rien restreint : afficher « du néant au néant » n'apprendrait rien.
+  const reponse = { learners };
+  if (periode.fromDay || periode.toDay) {
+    reponse.periode = { from: periode.fromDay, to: periode.toDay, tzOffset: periode.tzOffset };
+  }
+  reponse.stockage = etatStockage();
+
+  res.json(reponse);
+});
+
+// L'historique d'un apprenant à travers toutes ses évaluations.
+app.get('/api/learners/:id/history', requireAnnuaire, requireAdmin, (req, res) => {
+  const learner = store.getLearner(req.params.id);
+  if (!learner) return res.status(404).json({ error: 'Apprenant introuvable' });
+
+  const periode = parsePeriode(req.query);
+  if (!periode.ok) return res.status(400).json({ error: periode.error });
+
+  const evaluations = store.listLearnerHistory(learner.id, {
+    from: periode.from,
+    to: periode.toExclusive,
+  });
+  const resume = resumeDesEvaluations(evaluations);
+
+  res.json({
+    learner,
+    // fromInstant et toInstantExclusive rendent la fenêtre RÉELLEMENT appliquée
+    // vérifiable à l'œil. C'est la logique la plus facile à casser du chantier :
+    // une borne de fin mal posée fait disparaître une journée entière de
+    // résultats sans rien casser de visible. Publier les instants transforme un
+    // bogue silencieux en anomalie qui se voit.
+    periode: {
+      from: periode.fromDay,
+      to: periode.toDay,
+      tzOffset: periode.tzOffset,
+      fromInstant: periode.from,
+      toInstantExclusive: periode.toExclusive,
+    },
+    // Le pourcentage est calcule ICI, a la serialisation, comme avgPercent :
+    // un seul site d'arrondi pour toute l'application, et les deux stores
+    // restent libres de ne rendre que score et total. La garde total > 0 evite
+    // un NaN si une donnee ancienne etait incomplete.
+    evaluations: evaluations.map((e) => ({
+      ...e,
+      percent: e.total > 0 ? Math.round((e.score * 100) / e.total) : null,
+    })),
+    resume: { attempts: resume.attempts, avgPercent: arrondirPourcent(resume.avgPercent) },
+    stockage: etatStockage(),
+  });
+});
+
+// Création d'une fiche à la main par le formateur.
+app.post('/api/learners', requireAnnuaire, requireAdmin, (req, res) => {
+  const brut = req.body && req.body.displayName;
+  const displayName = typeof brut === 'string' ? brut.trim() : '';
+
+  if (!displayName) {
+    return res.status(400).json({ error: 'Le nom de l’apprenant est obligatoire.' });
+  }
+  // Un nom fait entièrement de ponctuation ou d'espaces insécables donne une clé
+  // vide : la fiche serait introuvable et capterait ensuite toutes les saisies
+  // vides. On refuse à l'entrée plutôt que de laisser l'annuaire se salir.
+  if (!nameKey(displayName)) {
+    return res.status(400).json({
+      error: 'Ce nom ne contient aucune lettre exploitable.',
+    });
+  }
+
+  try {
+    const { learner } = store.createLearner(displayName);
+    res.status(201).json({ learner });
+  } catch (err) {
+    // La route est protégée : le formateur a le droit de savoir QUELLE fiche
+    // occupe la place, et peut enchaîner sur un renommage ou une fusion. Ce
+    // serait un oracle sur une route publique ; ici c'est un service.
+    if (err.code === 'DUPLICATE') {
+      return res.status(409).json({ error: err.message, learner: err.learner });
+    }
+    throw err;
+  }
+});
+
+// Correction d'une fiche : le nom affiché, la mise en quarantaine, ou les deux.
+app.patch('/api/learners/:id', requireAnnuaire, requireAdmin, (req, res) => {
+  const existant = store.getLearner(req.params.id);
+  if (!existant) return res.status(404).json({ error: 'Apprenant introuvable' });
+
+  const corps = req.body || {};
+  const patch = {};
+
+  if (typeof corps.displayName === 'string') {
+    const displayName = corps.displayName.trim();
+    if (!displayName || !nameKey(displayName)) {
+      return res.status(400).json({ error: 'Ce nom ne contient aucune lettre exploitable.' });
+    }
+    patch.displayName = displayName;
+  }
+
+  if (typeof corps.suggestible === 'boolean') patch.suggestible = corps.suggestible;
+
+  if (!Object.keys(patch).length) {
+    return res.status(400).json({
+      error: 'Rien à modifier : indiquez un nom (displayName) ou une visibilité (suggestible).',
+    });
+  }
+
+  try {
+    // Un renommage recalcule la clé de nom et ne touche AUCUNE ligne de results :
+    // l'historique conserve le nom tel qu'il a été tapé le jour de l'évaluation.
+    const learner = store.updateLearner(req.params.id, patch);
+    if (!learner) return res.status(404).json({ error: 'Apprenant introuvable' });
+    res.json({ learner });
+  } catch (err) {
+    if (err.code === 'DUPLICATE') {
+      return res.status(409).json({ error: err.message, learner: err.learner });
+    }
+    throw err;
+  }
+});
+
+// Fusion de deux fiches ouvertes pour la même personne : les évaluations de la
+// source passent sous la cible, puis la source disparaît.
+app.post('/api/learners/:id/merge', requireAnnuaire, requireAdmin, (req, res) => {
+  const sourceId = req.params.id;
+  const brut = req.body && req.body.intoId;
+  const intoId = typeof brut === 'string' ? brut.trim() : '';
+
+  if (!intoId) {
+    return res.status(400).json({ error: 'Indiquez la fiche à conserver (intoId).' });
+  }
+  // Fusionner une fiche avec elle-même la supprimerait juste après y avoir
+  // rattaché ses propres résultats. Les deux stores s'en protègent aussi, mais
+  // ils répondent { moved: 0 } — un silence qui ressemble à un succès.
+  if (intoId === sourceId) {
+    return res.status(400).json({ error: 'Une fiche ne peut pas être fusionnée avec elle-même.' });
+  }
+
+  if (!store.getLearner(sourceId)) {
+    return res.status(404).json({ error: 'Apprenant introuvable' });
+  }
+  if (!store.getLearner(intoId)) {
+    return res.status(404).json({ error: 'Fiche de destination introuvable' });
+  }
+
+  const { moved } = store.mergeLearners(sourceId, intoId);
+  console.log(`Fusion d'apprenants : ${sourceId} -> ${intoId} (${moved} évaluation(s))`);
+  res.json({ moved });
 });
 
 // SPA fallback — serve index.html for all non-API routes
