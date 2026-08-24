@@ -1488,6 +1488,229 @@
   flex: 1;
 }
 
+/* ---------- Écran formateur : apprenants ---------- */
+/* Placé ICI et non en fin de fichier : ces écrans appartiennent à l'espace
+   formateur, dont l'écran de partage ci-dessus est le dernier. La ligne suivante
+   ouvre l'accueil participant, puis le thème encre — deux univers auxquels rien
+   de ce bloc ne doit s'appliquer.
+   QUATRE classes neuves (.periode, .periode-champs, .apprenant-ligne,
+   .apprenant-note) et TROIS réglages sur des classes existantes, listés à la fin
+   du bloc et sans lesquels le JSX ne tient pas. Tout le reste des six composants
+   réemploie des classes déjà auditées (.stack, .page-head, .card, .field,
+   .input, .btn, .recent-row, .tag, .notice, .meta-row, .bar, .empty-state,
+   .split-actions, .error-slot, .sr-only) sans les toucher.
+   AUCUNE couleur ni bordure neuve n'est introduite : chaque valeur ci-dessous
+   est un token dont le ratio est déjà écrit, dans index.css ou plus haut dans ce
+   fichier, et est reporté en commentaire là où il porte un contrat. */
+
+/* ---- Sélecteur de période (PeriodePicker) ---- */
+
+/* Bloc de RÉGLAGE : il lui faut une surface, sans quoi le role="group" que le
+   JSX déclare n'a aucune traduction visible — « Du », « Au » et leur bouton
+   flottent au milieu des données de l'écran.
+   --paper-2 a été essayé d'abord, pour copier le tiroir « Options avancées »
+   (.adv-panel, l.851), seul autre bloc de réglages du dépôt, et hériter de ses
+   contrastes déjà audités. REJETÉ : .adv-panel s'ouvre sous son bouton
+   .disclosure, qui l'ancre ; ce bloc-ci n'a aucun ancrage, et --paper-2 sur le
+   --paper-3 de la page ne vaut que 1,05:1, soit dE2000 = 1,15 — SOUS le seuil de
+   perception (≈2,3), et même sous l'écart de --paper-warm/--paper que index.css
+   assume déjà comme ténu (dE 1,47). Le panneau aurait été invisible.
+   --surface est donc retenue : 1,20:1 sur --paper-3, dE2000 = 5,24, franchement
+   perceptible. C'est la recette exacte de .card (fond blanc, 1px --line,
+   --r-lg), donc le même habillage que les blocs de la fiche d'apprenant : deux
+   surfaces de l'espace formateur qui ne divergent pas.
+   Ratios sur ce fond blanc, aucun neuf, tous vérifiés :
+     · .eyebrow (« Période », --text-3, 12px) = 5,85:1 — au-dessus des 4,5:1 de
+       WCAG 1.4.3, et 12px ne bénéficie d'aucune exemption « grand texte » ;
+     · .field-label (« Du », « Au », --text-2) = 8,79:1 ;
+     · .input et .btn--ghost gardent leur fond #fff : leur bordure
+       --line-control donne 3,76:1 sur ce blanc (WCAG 1.4.11 : 3:1). Blanc sur
+       blanc, la bordure porte seule le contrôle — précédent explicite et déjà
+       audité de .field-lead .segment (l.320-323) ;
+     · l'anneau --focus-ring (--gold-line) = 4,47:1 ;
+     · la bordure --line du bloc est un séparateur PUREMENT DÉCORATIF, conforme
+       au contrat du token (index.css l.120-122) : 1,08:1 sur --paper-3 et
+       1,29:1 sur le blanc intérieur, sans exigence WCAG — aucun contenu n'en
+       dépend pour être compris.
+   Le bouton « Afficher la période » ne porte pas .btn--block et n'en a pas
+   besoin : enfant d'une colonne flex, align-items: stretch l'étire déjà à toute
+   la largeur. C'est voulu — c'est l'action du bloc, face à l'échappatoire
+   compacte (.btn--sm) de l'en-tête. */
+.periode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-7);
+  padding: var(--s-7);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+/* Empilés sous 480px, deux colonnes au-delà. Le seuil mesure le CONTENU et non
+   un appareil : au pire cas, exactement 480px de fenêtre, .app-main laisse 444px
+   (480 − 2 × var(--s-8)), .periode en retire son padding et sa bordure
+   (444 − 2 × 16 − 2 × 1 = 410), et il reste (410 − 12) / 2 = 199px par colonne.
+   Mesuré : 199px de boîte pour 197px de contenu, la date s'y écrit sans être
+   rognée (scrollWidth == clientWidth). Au-delà, la colonne ne fait que grandir
+   jusqu'au plafond de 560px de .app-main. Sous le seuil, deux colonnes
+   tomberaient à ~136px et masqueraient une partie du jj/mm/aaaa.
+   Première requête à 480px du fichier ; les trois autres sont à 720px, seuil ici
+   hors sujet — le champ est à l'étroit bien avant. */
+.periode-champs {
+  display: grid;
+  gap: var(--s-5);
+}
+
+@media (min-width: 480px) {
+  .periode-champs {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* min-width: auto est la valeur par défaut d'un élément de grille. Sans cette
+   remise à zéro, un champ date dont la largeur minimale intrinsèque dépasse sa
+   colonne l'élargit au lieu de se laisser rogner, et c'est la grille entière qui
+   déborde la page. */
+.periode-champs > .field {
+  min-width: 0;
+}
+
+/* iOS : sans appearance: none, Safari impose sa propre boîte au champ date — il
+   IGNORE le min-height de .input et le tasse à la hauteur de son texte, sous le
+   plancher tactile de 44px (WCAG 2.5.5). La déclaration lui rend la hauteur de
+   .input, var(--h-action) = 52px, qui n'est PAS redéclarée ici : elle reste
+   celle de .input, comme le fond, la bordure, le rayon, la taille de texte et
+   l'anneau de focus, avec leurs ratios.
+   Elle NE DÉSACTIVE PAS la roulette native : appearance ne touche qu'à
+   l'habillage de la boîte, le sélecteur système s'ouvre toujours à la tape.
+   -webkit- en premier, pour les iOS antérieurs à 15.4. */
+.periode .input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Compagnon OBLIGATOIRE du précédent : privée de son habillage, la valeur du
+   champ est centrée par WebKit et flanquée d'une marge par défaut. Elle se
+   lirait au milieu du champ alors que « Du » et « Au » sont alignés à gauche, et
+   que tous les autres .input de l'application lisent à gauche. */
+.periode .input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+
+/* ---- Ligne d'évaluation (ApprenantHistorique) ---- */
+
+/* Trois enfants, deux rangées : titre du quiz et date à gauche, note à droite,
+   barre en dessous sur toute la largeur.
+   Grille et non flex, précisément pour faire passer la barre sous les deux
+   autres sans média-requête : à 375px, corps + barre + note sur une seule ligne
+   laisseraient moins de 60px à la barre, où elle ne dirait plus rien.
+   Placement EXPLICITE et non automatique : l'ordre du JSX est corps, barre,
+   note, que le placement automatique disposerait corps / barre, puis note à la
+   ligne — soit exactement l'inverse de ce qu'on veut lire.
+   --line et non --line-control : la ligne n'est PAS un bouton (aucun écran
+   n'existe derrière une évaluation) et le contrat du token (index.css l.120-127)
+   réserve --line-control aux contrôles interactifs, --line aux séparateurs
+   décoratifs, sans exigence WCAG. Même traitement que .card, .meta-row et
+   .q-card, les autres surfaces inertes du dépôt. C'est le seul écart avec
+   .recent-row--static (QuizResults l.282), qui porte encore --line-control par
+   simple héritage de .recent-row : appliquer le contrat ici plutôt que le
+   corriger là évite de repeindre un écran qui n'est pas en cause. */
+.apprenant-ligne {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-6) var(--s-7);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.apprenant-ligne > .recent-row-body {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.apprenant-ligne > .apprenant-note {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+
+/* .bar et .bar-fill sont reprises SANS RETOUCHE : le remplissage se lit contre
+   sa piste, 3,46:1 (l.1061-1062), et ce ratio ne dépend pas de la surface que la
+   barre traverse. Elle est de toute façon aria-hidden et ne porte AUCUNE
+   information que .apprenant-note ne donne en toutes lettres juste à côté —
+   WCAG 1.4.11 ne s'y applique donc même pas, et ce 3,46:1 est du contraste en
+   trop plutôt qu'un contrat. */
+.apprenant-ligne > .bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* tabular-nums : à chasse proportionnelle, le « 1 » d'Instrument Sans est plus
+   étroit que les autres chiffres et les notes se décalent d'une ligne à l'autre
+   — exactement ce qu'une colonne de notes ne doit pas faire.
+   white-space: nowrap : « 12 / 15 · 80 % » ne se casse pas en deux à l'approche
+   du bord.
+   --text sur --surface = 16,67:1. Même rang que .recent-row-title, qui hérite de
+   la même couleur : la note et le titre du quiz sont les deux données de la
+   ligne, aucune des deux n'est un commentaire de l'autre. */
+.apprenant-note {
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Trois réglages réclamés par le JSX, hors des quatre classes prévues ---- */
+
+/* .recent-row est en space-between et les lignes d'apprenants ont TROIS enfants
+   (pastille, corps, étiquettes) là où les lignes de quiz n'en ont que deux. Sans
+   cette règle l'espace libre se répartit entre la pastille et le corps, et le
+   nom flotte au milieu de la ligne au lieu d'être collé à sa pastille.
+   flex: 1 (donc base 0) et non flex-grow seul : le corps doit aussi pouvoir se
+   rétrécir, .recent-row-body portant déjà min-width: 0 pour que
+   .recent-row-title puisse s'abréger.
+   0-3-0 : l'emporte sur .recent-row-body (0-1-0) quel que soit l'ordre. */
+.recent-row .app-mark + .recent-row-body {
+  flex: 1;
+}
+
+/* .card n'a JAMAIS porté de padding : son unique usage jusqu'ici était
+   .card.field-lead, où c'est .field-lead qui le donne (l.288-299). Les quatre
+   blocs de la fiche d'apprenant sont des .card.stack--tight sans .field-lead :
+   sans cette règle leur contenu touche la bordure.
+   Mêmes valeurs que .field-lead, aux mêmes seuils, pour que deux cartes de
+   l'espace formateur ne respirent pas différemment.
+   0-2-0, et .field-lead ne porte pas .stack--tight : .card.field-lead n'est pas
+   touchée. Corollaire à ne pas perdre — une .card reste sans padding tant qu'une
+   seconde classe ne lui en donne pas ; c'est l'idiome du fichier, pas un oubli. */
+.card.stack--tight {
+  padding: var(--s-7);
+}
+
+@media (min-width: 720px) {
+  .card.stack--tight {
+    padding: var(--s-8);
+  }
+}
+
+/* Un nom d'apprenant est du texte LIBRE, et il tient le <h1> de la fiche. Dans
+   .field-row (baseline, space-between) un élément flex ne descend pas sous sa
+   largeur minimale : un nom d'un seul tenant pousserait donc la page en
+   défilement horizontal, ce que WCAG 1.4.10 interdit. min-width: 0 lève ce
+   plancher, overflow-wrap: anywhere ne coupe que ce qui ne rentre vraiment pas —
+   et il faut les deux, min-width seul ne rendant pas le mot sécable.
+   Sans effet sur « Créer un quiz » ni « Apprenants », qui tiennent déjà : le
+   rétrécissement ne s'applique qu'en cas de débordement réel. */
+.page-head .field-row > h1 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Accueil participant ---------- */
 .welcome {
   flex: 1;

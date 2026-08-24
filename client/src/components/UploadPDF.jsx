@@ -103,7 +103,7 @@ async function extractTextFromPdf(file, onProgress) {
   return { text: text.trim(), pages: pdf.numPages };
 }
 
-function UploadPDF({ onQuizGenerated, onVoirResultats }) {
+function UploadPDF({ onQuizGenerated, onVoirResultats, onVoirApprenants }) {
   const [file, setFile] = useState(null);
   const [pageCount, setPageCount] = useState(null);
   const [title, setTitle] = useState('');
@@ -517,21 +517,34 @@ function UploadPDF({ onQuizGenerated, onVoirResultats }) {
   return (
     <form onSubmit={handleSubmit} className="stack">
       <div className="page-head">
-        {/* .field-row aligne le titre et l'accès secondaire sur la même ligne de
-            base. L'accès aux résultats est volontairement DISCRET : il ne doit
-            pas concurrencer le geste principal de l'écran, qui est de déposer
-            un document. */}
+        {/* .field-row aligne le titre et les accès secondaires sur la même ligne
+            de base. Ces accès sont volontairement DISCRETS : ils ne doivent pas
+            concurrencer le geste principal de l'écran, qui est de déposer un
+            document. */}
         <div className="field-row">
           {/* tabIndex={-1} : cible de la reprise de focus au changement d'écran,
               hors de l'ordre de tabulation. */}
           <h1 ref={formHeadingRef} tabIndex={-1}>
             Créer un quiz
           </h1>
-          {onVoirResultats && (
-            <button type="button" className="app-bar-link" onClick={onVoirResultats}>
-              <Icon name="list" size={15} width={1.7} />
-              Résultats
-            </button>
+          {/* Deux accès désormais : .tag-row les tient côte à côte et les fait
+              passer à la ligne plutôt que d'écraser le titre sur un écran
+              étroit. */}
+          {(onVoirResultats || onVoirApprenants) && (
+            <div className="tag-row">
+              {onVoirResultats && (
+                <button type="button" className="app-bar-link" onClick={onVoirResultats}>
+                  <Icon name="list" size={15} width={1.7} />
+                  Résultats
+                </button>
+              )}
+              {onVoirApprenants && (
+                <button type="button" className="app-bar-link" onClick={onVoirApprenants}>
+                  <Icon name="chart" size={15} width={1.7} />
+                  Apprenants
+                </button>
+              )}
+            </div>
           )}
         </div>
         <p>Déposez un document, l’IA en tire des questions à choix multiple.</p>

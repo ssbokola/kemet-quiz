@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import UploadPDF from '../components/UploadPDF';
 import ReviewQuestions from '../components/ReviewQuestions';
 import QuizResults from '../components/QuizResults';
+import Apprenants from '../components/Apprenants';
 import AdminGate from '../components/AdminGate';
 import Icon from '../components/Icon';
 import { adminFetch, getAdminPassword, messageErreur, MESSAGE_RESEAU } from '../api';
@@ -20,7 +21,7 @@ function formatExpiry(iso) {
 
 function AdminPage() {
   const [unlocked, setUnlocked] = useState(!!getAdminPassword());
-  const [step, setStep] = useState('upload'); // upload → review → share, + results
+  const [step, setStep] = useState('upload'); // upload → review → share, + results, apprenants
   // Quiz a ouvrir d'emblee dans l'ecran Resultats. Nul quand on y arrive par
   // « Voir les resultats » depuis l'ecran de creation : on affiche alors la liste.
   const [resultsQuizId, setResultsQuizId] = useState(null);
@@ -251,6 +252,14 @@ function AdminPage() {
     );
   }
 
+  // Écran « Apprenants ». Comme l'écran « Résultats », il n'existe QUE derrière
+  // le mot de passe : il expose le nom des apprenants et leurs notes, qui ne
+  // regardent que le formateur. Aucun quiz à lui passer — il parle des
+  // personnes, pas d'un questionnaire en particulier.
+  if (step === 'apprenants') {
+    return <Apprenants onBack={() => setStep(quiz ? 'share' : 'upload')} />;
+  }
+
   if (step === 'upload') {
     return (
       <UploadPDF
@@ -259,6 +268,7 @@ function AdminPage() {
           setResultsQuizId(null);
           setStep('results');
         }}
+        onVoirApprenants={() => setStep('apprenants')}
       />
     );
   }
@@ -386,6 +396,16 @@ function AdminPage() {
           >
             <Icon name="list" size={16} width={1.7} />
             Résultats
+          </button>
+          <button
+            className="btn btn--ghost"
+            onClick={() => {
+              setLoadError('');
+              setStep('apprenants');
+            }}
+          >
+            <Icon name="chart" size={16} width={1.7} />
+            Apprenants
           </button>
           <button className="btn btn--ghost" onClick={reset}>
             Nouveau quiz
