@@ -549,13 +549,36 @@ app.post('/api/quiz/:id/submit', (req, res) => {
 });
 
 // Admin: get results for a quiz
+// État du stockage, joint à toute réponse de l'espace formateur qui affiche des
+// résultats. Sans volume monté, la base est effacée à chaque déploiement : c'est
+// écrit dans les journaux de démarrage, que personne ne lit. L'information doit
+// atteindre le formateur là où elle compte — devant les données concernées.
+function etatStockage() {
+  return {
+    persistant: !store.isEphemeral,
+    raison: store.ephemeralReason || null,
+  };
+}
+
+// Liste des quiz créés, pour l'écran « Résultats » de l'espace formateur.
+// Protégée : elle expose les titres des supports de formation et le nom des
+// apprenants par ricochet.
+app.get('/api/quizzes', requireAdmin, (req, res) => {
+  res.json({ quizzes: store.listQuizzes(), stockage: etatStockage() });
+});
+
 app.get('/api/quiz/:id/results', requireAdmin, (req, res) => {
   const quiz = store.getQuiz(req.params.id);
   if (!quiz) {
     return res.status(404).json({ error: 'Quiz introuvable' });
   }
 
-  res.json({ title: quiz.title, results: store.listResults(req.params.id) });
+  res.json({
+    title: quiz.title,
+    total: quiz.questions.length,
+    results: store.listResults(req.params.id),
+    stockage: etatStockage(),
+  });
 });
 
 // SPA fallback — serve index.html for all non-API routes

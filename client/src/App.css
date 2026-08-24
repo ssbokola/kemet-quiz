@@ -870,7 +870,14 @@
   cursor: pointer;
 }
 
-.recent-row:hover {
+/* Les lignes d'apprenants réutilisent la même forme mais ne sont PAS des
+   commandes : ni curseur de clic, ni survol, qui promettraient une action
+   inexistante. Même principe que .q-option--edit. */
+.recent-row--static {
+  cursor: default;
+}
+
+.recent-row:not(.recent-row--static):hover {
   border-color: var(--gold-line);
 }
 

@@ -60,6 +60,21 @@ function findResultByName(quizId, playerName) {
   return found ? { ...found } : null;
 }
 
+// Même contrat que db.js : les plus récents d'abord, sans les questions.
+function listQuizzes() {
+  return [...quizzes.values()]
+    .map((q) => ({
+      id: q.id,
+      title: q.title,
+      createdAt: q.createdAt,
+      closed: Boolean(q.closed),
+      singleAttempt: q.singleAttempt !== false,
+      expiresAt: q.expiresAt ?? null,
+      resultCount: (results.get(q.id) || []).length,
+    }))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
 function listResults(quizId) {
   return (results.get(quizId) || []).map((r) => ({ ...r }));
 }
@@ -83,6 +98,7 @@ module.exports = {
   updateQuiz,
   countResults,
   findResultByName,
+  listQuizzes,
   listResults,
   addResult,
 };

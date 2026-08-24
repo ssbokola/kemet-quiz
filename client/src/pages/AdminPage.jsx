@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import UploadPDF from '../components/UploadPDF';
 import ReviewQuestions from '../components/ReviewQuestions';
+import QuizResults from '../components/QuizResults';
 import AdminGate from '../components/AdminGate';
 import Icon from '../components/Icon';
 import { adminFetch, getAdminPassword, messageErreur, MESSAGE_RESEAU } from '../api';
@@ -19,7 +20,10 @@ function formatExpiry(iso) {
 
 function AdminPage() {
   const [unlocked, setUnlocked] = useState(!!getAdminPassword());
-  const [step, setStep] = useState('upload'); // upload → review → share
+  const [step, setStep] = useState('upload'); // upload → review → share, + results
+  // Quiz a ouvrir d'emblee dans l'ecran Resultats. Nul quand on y arrive par
+  // « Voir les resultats » depuis l'ecran de creation : on affiche alors la liste.
+  const [resultsQuizId, setResultsQuizId] = useState(null);
   const [quiz, setQuiz] = useState(null);
   const [dropped, setDropped] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -231,8 +235,32 @@ function AdminPage() {
     return <AdminGate onUnlock={() => setUnlocked(true)} />;
   }
 
+  // Écran « Résultats ». Il n'existe QUE derrière le mot de passe : il expose le
+  // nom des apprenants et leurs notes, qui ne regardent que le formateur.
+  // `quizIdInitial` n'est renseigné qu'en venant de l'écran de partage, pour
+  // ouvrir directement le quiz qu'on vient de publier.
+  if (step === 'results') {
+    return (
+      <QuizResults
+        quizIdInitial={resultsQuizId}
+        onBack={() => {
+          setResultsQuizId(null);
+          setStep(quiz ? 'share' : 'upload');
+        }}
+      />
+    );
+  }
+
   if (step === 'upload') {
-    return <UploadPDF onQuizGenerated={handleQuizGenerated} />;
+    return (
+      <UploadPDF
+        onQuizGenerated={handleQuizGenerated}
+        onVoirResultats={() => {
+          setResultsQuizId(null);
+          setStep('results');
+        }}
+      />
+    );
   }
 
   if (step === 'review' && quiz) {
@@ -348,6 +376,17 @@ function AdminPage() {
               Modifier
             </button>
           )}
+          <button
+            className="btn btn--ghost"
+            onClick={() => {
+              setLoadError('');
+              setResultsQuizId(quiz.quizId);
+              setStep('results');
+            }}
+          >
+            <Icon name="list" size={16} width={1.7} />
+            Résultats
+          </button>
           <button className="btn btn--ghost" onClick={reset}>
             Nouveau quiz
           </button>

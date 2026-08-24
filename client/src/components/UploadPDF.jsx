@@ -30,7 +30,7 @@ const EXPIRY_OPTIONS = [
 ];
 
 const ATTEMPT_OPTIONS = [
-  { value: true, label: '1 tentative', desc: 'un score par participant', resume: '1 tentative' },
+  { value: true, label: '1 tentative', desc: 'un score par apprenant', resume: '1 tentative' },
   { value: false, label: 'Libre', desc: 'entraînement, rejouable', resume: 'Tentatives libres' },
 ];
 
@@ -103,7 +103,7 @@ async function extractTextFromPdf(file, onProgress) {
   return { text: text.trim(), pages: pdf.numPages };
 }
 
-function UploadPDF({ onQuizGenerated }) {
+function UploadPDF({ onQuizGenerated, onVoirResultats }) {
   const [file, setFile] = useState(null);
   const [pageCount, setPageCount] = useState(null);
   const [title, setTitle] = useState('');
@@ -517,11 +517,23 @@ function UploadPDF({ onQuizGenerated }) {
   return (
     <form onSubmit={handleSubmit} className="stack">
       <div className="page-head">
-        {/* tabIndex={-1} : cible de la reprise de focus au changement d'écran,
-            hors de l'ordre de tabulation. */}
-        <h1 ref={formHeadingRef} tabIndex={-1}>
-          Créer un quiz
-        </h1>
+        {/* .field-row aligne le titre et l'accès secondaire sur la même ligne de
+            base. L'accès aux résultats est volontairement DISCRET : il ne doit
+            pas concurrencer le geste principal de l'écran, qui est de déposer
+            un document. */}
+        <div className="field-row">
+          {/* tabIndex={-1} : cible de la reprise de focus au changement d'écran,
+              hors de l'ordre de tabulation. */}
+          <h1 ref={formHeadingRef} tabIndex={-1}>
+            Créer un quiz
+          </h1>
+          {onVoirResultats && (
+            <button type="button" className="app-bar-link" onClick={onVoirResultats}>
+              <Icon name="list" size={15} width={1.7} />
+              Résultats
+            </button>
+          )}
+        </div>
         <p>Déposez un document, l’IA en tire des questions à choix multiple.</p>
       </div>
 
@@ -722,7 +734,7 @@ function UploadPDF({ onQuizGenerated }) {
             <div id="adv-panel" className="adv-panel" hidden={!diffusionOuverte}>
               <div className="field">
                 <span className="field-label" id="attempts-label">
-                  Tentatives par stagiaire
+                  Tentatives par apprenant
                 </span>
                 <RadioGroup
                   className="choices"

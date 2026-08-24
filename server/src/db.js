@@ -108,6 +108,15 @@ const stmt = {
     'SELECT * FROM results WHERE quiz_id = ? AND player_key = ? ORDER BY id LIMIT 1'
   ),
   listResults: db.prepare('SELECT * FROM results WHERE quiz_id = ? ORDER BY id'),
+  // Le décompte se fait en sous-requête plutôt qu'en jointure : une jointure
+  // aurait écarté les quiz sans aucune réponse, qui sont précisément ceux que
+  // le formateur cherche quand il se demande si son lien a été ouvert.
+  listQuizzes: db.prepare(`
+    SELECT id, title, created_at, closed, single_attempt, expires_at,
+           (SELECT COUNT(*) FROM results WHERE results.quiz_id = quizzes.id) AS result_count
+    FROM quizzes
+    ORDER BY created_at DESC
+  `),
   insertResult: db.prepare(`
     INSERT INTO results (quiz_id, player_name, player_key, score, total, submitted_at)
     VALUES (@quizId, @playerName, @playerKey, @score, @total, @submittedAt)
@@ -171,6 +180,24 @@ function findResultByName(quizId, playerName) {
   return row ? rowToResult(row) : null;
 }
 
+/**
+ * Tous les quiz, du plus récent au plus ancien, avec le nombre de réponses
+ * reçues. Volontairement SANS les questions ni le texte source : cette liste
+ * alimente un écran de survol, pas une relecture, et charger 30 questions par
+ * quiz pour afficher une ligne serait du gaspillage.
+ */
+function listQuizzes() {
+  return stmt.listQuizzes.all().map((row) => ({
+    id: row.id,
+    title: row.title,
+    createdAt: row.created_at,
+    closed: Boolean(row.closed),
+    singleAttempt: Boolean(row.single_attempt),
+    expiresAt: row.expires_at,
+    resultCount: row.result_count,
+  }));
+}
+
 function listResults(quizId) {
   return stmt.listResults.all(quizId).map(rowToResult);
 }
@@ -195,6 +222,7 @@ module.exports = {
   updateQuiz,
   countResults,
   findResultByName,
+  listQuizzes,
   listResults,
   addResult,
 };
