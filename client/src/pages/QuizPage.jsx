@@ -395,6 +395,7 @@ function QuizPage() {
           quizTitle={quizData.title}
           questionCount={quizData.questions.length}
           singleAttempt={quizData.singleAttempt !== false}
+          quizId={id}
           onSubmit={(name) => {
             setPlayerName(name);
             setStep('quiz');

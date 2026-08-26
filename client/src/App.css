@@ -1491,7 +1491,7 @@
 /* ---------- Écran formateur : apprenants ---------- */
 /* Placé ICI et non en fin de fichier : ces écrans appartiennent à l'espace
    formateur, dont l'écran de partage ci-dessus est le dernier. La ligne suivante
-   ouvre l'accueil participant, puis le thème encre — deux univers auxquels rien
+   ouvre l'accueil apprenant, puis le thème encre — deux univers auxquels rien
    de ce bloc ne doit s'appliquer.
    QUATRE classes neuves (.periode, .periode-champs, .apprenant-ligne,
    .apprenant-note) et TROIS réglages sur des classes existantes, listés à la fin
@@ -1711,7 +1711,7 @@
   overflow-wrap: anywhere;
 }
 
-/* ---------- Accueil participant ---------- */
+/* ---------- Accueil apprenant ---------- */
 .welcome {
   flex: 1;
   display: flex;
@@ -1719,6 +1719,78 @@
   justify-content: space-between;
   gap: var(--s-12);
   min-height: 74dvh;
+}
+
+/* Saisie assistée du nom. La liste est HORS DU FLUX, et ce n'est pas une
+   coquetterie : .welcome est en `justify-content: space-between` avec
+   `min-height: 74dvh`, donc environ 190 px d'espace libre sur un écran courant.
+   Une liste en flux les absorberait puis pousserait le conteneur, faisant
+   remonter le bouton « Commencer » d'autant — et refaire ce trajet à chaque
+   aller-retour réseau pendant que l'apprenant tape. Sur téléphone, la cible
+   primaire se déroberait sous le pouce.
+   Écartés : réserver la hauteur à vide (240 px perdus en permanence sur l'écran
+   le plus fréquenté) ; `margin-top: auto`, strictement équivalent à
+   space-between pour deux enfants, donc sans effet. */
+.field:has(> .suggestions) {
+  position: relative;
+}
+
+.suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin-top: var(--s-2);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  background: var(--surface);
+  /* --line-control sur --surface : 3,76:1, conforme au 3:1 exigé par WCAG
+     1.4.11 pour la limite d'un composant d'interface. */
+  border: 1.5px solid var(--line-control);
+  border-radius: var(--r-control);
+  box-shadow: var(--shadow-pop);
+}
+
+.suggestions-etat {
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--t-label);
+  font-weight: 600;
+  /* --text-3 sur --surface : 5,85:1. */
+  color: var(--text-3);
+}
+
+/* Une ligne de liste, pas un bouton d'action : ni fond ni bordure au repos. Le
+   plancher tactile reste tenu par --h-min (44 px). */
+.suggestion {
+  min-height: var(--h-min);
+  padding: var(--s-2) var(--s-3);
+  border: 1.5px solid transparent;
+  border-radius: var(--r-control);
+  background: none;
+  font-size: var(--t-body);
+  /* --text sur --surface : 16,67:1. */
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestion:hover {
+  /* --gold-line sur --surface : 4,47:1. */
+  border-color: var(--gold-line);
+  background: var(--gold-soft);
+}
+
+/* Confirmation « aucun de ces noms n'est le vôtre » : un bloc dans le flux, pas
+   une modale — le motif modal du dépôt fait une centaine de lignes et serait
+   hors de proportion pour une question à deux réponses. */
+.confirm-inline {
+  padding: var(--s-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
 }
 
 .welcome-title {
@@ -2382,7 +2454,7 @@
    .quiz (Quiz.jsx), qui pose color: var(--on-ink) — blanc — tandis que .modal
    pose un fond blanc. Sans cette déclaration le titre héritait du blanc et se
    retrouvait à 1,00:1 : « Envoyer vos réponses ? » était littéralement
-   invisible, sur le dernier écran que voit un participant avant d'envoyer.
+   invisible, sur le dernier écran que voit un apprenant avant d'envoyer.
    Le paragraphe voisin, lui, déclarait bien sa couleur — d'où un défaut qui
    passait inaperçu, la modale paraissant simplement commencer par un blanc. */
 .modal :is(h2, h3) {
