@@ -1,9 +1,9 @@
 # Kemet Quiz — Handoff technique
 
-**Dernière mise à jour :** 30 juillet 2026
+**Dernière mise à jour :** 26 août 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit :** `17656c1` — *Integrate UX/UI refonte: ink & gold quiz, review step, access gate*
+**Dernier commit :** `24d8c62` — *Saisie assistée du nom sur l'accueil de l'apprenant*
 
 ---
 
@@ -47,28 +47,41 @@ kemet-quizz/
 ├── client/
 │   ├── index.html            meta Open Graph + theme-color
 │   └── src/
+│       ├── main.jsx          point d'entrée React (createRoot, StrictMode)
 │       ├── index.css         reset + design tokens + polices
 │       ├── App.css           toute la feuille de style
 │       ├── App.jsx           routes
-│       ├── api.js            helper d'authentification formateur
+│       ├── api.js            fetch, messages d'erreur véridiques, auth formateur
+│       ├── dates.js          formatage français des dates et des périodes
 │       ├── components/
 │       │   ├── AdminGate.jsx        porte d'accès mot de passe
 │       │   ├── AppBar.jsx           barre d'application
 │       │   ├── Icon.jsx             jeu d'icônes SVG maison
+│       │   ├── RadioGroup.jsx       radiogroup ARIA complet, réutilisable
 │       │   ├── UploadPDF.jsx        dépôt + réglages + écran de génération
 │       │   ├── ReviewQuestions.jsx  relecture / édition avant publication
-│       │   ├── Welcome.jsx          accueil participant
+│       │   ├── QuizResults.jsx      formateur : réponses reçues par quiz
+│       │   ├── Apprenants.jsx       formateur : aiguillage des 4 vues apprenants
+│       │   ├── ApprenantsListe.jsx  formateur : annuaire avec moyennes
+│       │   ├── ApprenantHistorique.jsx  formateur : historique + période
+│       │   ├── PeriodePicker.jsx    sélecteur de période (deux dates)
+│       │   ├── AnnuaireApprenants.jsx   formateur : entretien de l'annuaire
+│       │   ├── FicheApprenant.jsx   formateur : renommer, (dé)suggérer, fusionner
+│       │   ├── Welcome.jsx          accueil apprenant + saisie assistée du nom
 │       │   ├── Quiz.jsx             passation, thème encre
 │       │   └── Results.jsx          score, correction, export PDF
-│       └── pages/
-│           ├── AdminPage.jsx        upload → review → share
-│           └── QuizPage.jsx         welcome → quiz → results
+│       ├── pages/
+│       │   ├── AdminPage.jsx        upload → review → share (+ results, apprenants)
+│       │   └── QuizPage.jsx         welcome → quiz → results
+│       └── assets/           hero.png, react.svg, vite.svg — AUCUN n'est référencé
 └── server/
     └── src/
         ├── index.js          API complète (routes, IA, validation)
-        ├── db.js             base SQLite : schéma + accès aux quiz et résultats
+        ├── db.js             SQLite : schéma, MIGRATIONS, quiz, résultats, apprenants
         ├── db-memory.js      même interface, en mémoire — repli si db.js échoue
-        └── name-key.js       normalisation des prénoms, partagée par les deux stores
+        ├── ids.js            newId() — identifiants de fiche, partagé par les deux stores
+        ├── periode.js        jours calendaires → instants UTC (la logique la plus piégeuse)
+        └── name-key.js       normalisation des noms, partagée par les deux stores
 ```
 
 ---
@@ -83,12 +96,22 @@ kemet-quizz/
 4. **Génération** — trois étapes affichées : lecture du document (progression réelle des pages), rédaction, vérification. Réponse en flux NDJSON.
 5. **Relecture** (`ReviewQuestions`) — chaque question est éditable ; cliquer une option la désigne comme bonne réponse ; bouton de régénération par question. Bandeau d'avertissement si des questions ont été écartées à la validation.
 6. **Partage** — QR code, lien copiable, envoi WhatsApp, fermeture/réouverture du quiz.
+7. **Résultats** (`QuizResults`) — la liste des quiz avec leur nombre de réponses ; pour chacun, qui a répondu, quel score, quand, la moyenne, et un export `.csv` (séparateur `;` et BOM UTF-8, pour qu'Excel en configuration française lise les accents).
+8. **Apprenants** (`Apprenants` et ses quatre vues) — l'annuaire avec la moyenne et le nombre d'évaluations de chacun ; l'historique d'un apprenant, filtrable par **deux dates saisies** et exportable en `.csv` (la période appliquée est exportée telle quelle) ; et l'entretien de l'annuaire : créer une fiche, corriger un nom, **sortir une fiche de quarantaine** (bascule `suggestible`), fusionner deux doublons.
+
+> **La moyenne est la moyenne des POURCENTAGES**, pas `Σscore / Σtotal` : chaque évaluation compte pareil, un 5/5 pèse autant qu'un 25/30. C'est un choix explicite de l'utilisateur. Elle n'est jamais affichée seule, toujours avec le nombre d'évaluations — non pondérée, elle est fragile sur peu de mesures.
+
+> Les deux écrans sont accessibles depuis l'écran de création (liens discrets à droite du titre) et depuis l'écran de partage.
 
 ### Participant — `/quiz/:id`
 
-1. **Accueil** (`Welcome`) — titre, nombre de questions, durée estimée, saisie du prénom.
+1. **Accueil** (`Welcome`) — titre, nombre de questions, durée estimée, **saisie assistée du nom** : à partir de trois caractères, l'application propose les noms connus de l'annuaire, pour que les évaluations successives d'une même personne se rattachent à la même fiche.
+   Ce n'est **pas** une combobox ARIA, délibérément : un champ texte ordinaire et de vrais `<button>`, parce que le focus virtuel (`aria-activedescendant`) est précisément ce que TalkBack et VoiceOver iOS tiennent le plus mal, et que la cible est le téléphone.
+   **Un échec de suggestion n'est jamais une erreur pour l'apprenant** : la liste se replie, sans un mot, et il tape son nom comme avant. Aucun appel réseau ne précède le début du quiz.
+   La liste est rendue **hors du flux** : `.welcome` est en `space-between` avec un `min-height`, et une liste en flux ferait remonter le bouton « Commencer » à chaque aller-retour réseau, sous le pouce.
+   **Une étape de confirmation existe sur le chemin critique**, et c'est la seule barrière anti-doublon côté public : si des noms sont proposés et qu'aucun n'a été retenu, « Commencer » n'envoie pas — il ouvre un bloc « Aucun de ces noms n'est le vôtre ? » avec « Corriger » / « Oui, c'est mon nom ». Sans correspondance, en revanche, le quiz démarre directement : il n'y a aucune ambiguïté à lever.
 2. **Passation** (`Quiz`) — thème encre (`document.body` reçoit la classe `theme-ink`), une question par écran, **pas d'auto-avance**. Barre segmentée cliquable, feuille « toutes les questions », écran de récapitulatif final qui nomme les questions manquantes, modale de confirmation avant envoi.
-   Raccourcis clavier : `A`–`D` ou `1`–`4` pour répondre, `←` `→` `Entrée` pour naviguer, `Escape` pour fermer.
+   Raccourcis clavier : `A`–`F` ou `1`–`6` pour répondre (le nombre d'options va de 2 à 6 ; A–D est le cas nominal, pas le contrat), `←` `→` `Entrée` pour naviguer, `Escape` pour fermer.
 3. **Résultats** (`Results`) — score animé dans un anneau, confettis au-delà de 80 %, correction question par question avec explication, export PDF, partage WhatsApp, bouton « Refaire » si le quiz autorise plusieurs tentatives.
 
 ---
@@ -102,9 +125,21 @@ kemet-quizz/
 | `GET /api/quiz/:id/full` | ✅ | Quiz **avec** les réponses, pour la relecture |
 | `PATCH /api/quiz/:id` | ✅ | `{ title?, questions?, closed?, expiresInHours?, singleAttempt? }` |
 | `POST /api/quiz/:id/regenerate/:index` | ✅ | Régénère une seule question |
-| `GET /api/quiz/:id/results` | ✅ | Scores enregistrés — **aucune UI ne les consomme** |
+| `GET /api/quizzes` | ✅ | Liste des quiz, du plus récent au plus ancien, avec le nombre de réponses |
+| `GET /api/quiz/:id/results` | ✅ | Scores enregistrés pour un quiz |
+| `GET /api/learners` | ✅ | Annuaire : chaque apprenant avec `attempts`, `avgPercent`, `lastSubmittedAt`. Période optionnelle |
+| `GET /api/learners/:id/history` | ✅ | Historique borné par dates + moyenne de la période |
+| `POST /api/learners` | ✅ | Le formateur crée une fiche. `409` avec la fiche existante en cas de doublon |
+| `PATCH /api/learners/:id` | ✅ | `{ displayName?, suggestible? }`. Ne touche à aucune ligne de `results` |
+| `POST /api/learners/:id/merge` | ✅ | `{ intoId }` — déplace les évaluations puis supprime la fiche source |
+| `GET /api/learners/suggest` | — | **Publique.** `?q=&quizId=` → `{ suggestions: [...] }`, un tableau de **chaînes seules** — ni id, ni date, ni compteur |
 | `GET /api/quiz/:id` | — | Quiz **sans** les réponses. `410` si fermé ou expiré |
-| `POST /api/quiz/:id/submit` | — | Corrige et enregistre. `409` si tentative unique déjà utilisée, `410` si fermé |
+| `POST /api/quiz/:id/submit` | — | Corrige et enregistre. `400` si `nameKey()` du nom est vide (espaces ou ponctuation seuls — garde-fou contre une fiche à `name_key` vide qui adopterait toutes les saisies vides), `409` si tentative unique déjà utilisée, `410` si fermé |
+| `GET {*splat}` | — | Repli SPA. ⚠️ **Toute route d'API doit être déclarée AVANT lui**, sinon elle renvoie `index.html` à la place du JSON |
+
+**La route de suggestion est publique et c'est un arbitrage assumé.** Elle exige au moins 3 caractères, plafonne à 5 résultats, n'accepte qu'un préfixe strict sur une liste blanche de caractères (`/^[a-z][a-z '-]*$/`, condition de sûreté du `GLOB` qui n'a pas de clause `ESCAPE`), exclut les fiches en quarantaine, exige un `quizId` dont le quiz soit **ouvert et non expiré**, et applique une limitation de débit par IP. Elle reste néanmoins **énumérable** par qui détient un lien de quiz vivant : c'est le prix de la fonctionnalité, voir §8.
+
+**Verrou de confidentialité.** Les cinq routes `/api/learners*` protégées répondent **503** quand `ADMIN_PASSWORD` est vide, plutôt que de laisser `requireAdmin` ouvrir l'annuaire à tous. Le quiz continue de fonctionner ; seul l'annuaire est scellé.
 
 **Authentification :** mot de passe partagé `ADMIN_PASSWORD`, transmis dans l'en-tête `x-admin-password` par `client/src/api.js`.
 
@@ -118,16 +153,19 @@ Motif historique : les gros PDF provoquaient des `502` (`Request aborted` dans m
 
 ### Stockage
 
-Tout passe par `server/src/db.js`, qui expose une petite API (`createQuiz`, `getQuiz`, `updateQuiz`, `addResult`, `findResultByName`, `listResults`, `countResults`). `index.js` n'écrit jamais en SQL directement.
+Tout passe par `server/src/db.js`, qui expose **21 fonctions** — les quiz et les résultats, puis l'annuaire d'apprenants (`listQuizzes`, `suggestLearners`, `resolveLearner`, `ensureLearner`, `createLearner`, `updateLearner`, `getLearner`, `listLearners`, `listLearnerHistory`, `findResultByLearner`, `mergeLearners`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 21 fonctions, dans le même ordre.
 
-Deux tables :
+Trois tables :
 
 | Table | Contenu |
 | --- | --- |
 | `quizzes` | un quiz par ligne ; les questions sont sérialisées en JSON dans une colonne (elles sont toujours lues et écrites en bloc) |
-| `results` | une ligne par participation, liée au quiz par `ON DELETE CASCADE` |
+| `results` | une ligne par participation, liée au quiz par `ON DELETE CASCADE`, et à l'apprenant par `learner_id` (`ON DELETE SET NULL`) |
+| `learners` | une fiche par apprenant : `display_name`, `name_key` (unique), `created_by` (`learner` / `trainer` / `import`), `suggestible` |
 
-`node:sqlite` (`DatabaseSync`) est **synchrone** : les gestionnaires de routes sont restés synchrones, et un cycle lecture → vérification → écriture (la règle de tentative unique, par exemple) ne peut pas être entrelacé avec une autre requête. Aucune transaction explicite n'est donc nécessaire.
+Index : `idx_results_quiz`, `idx_results_name`, `idx_learners_key` (UNIQUE) et `idx_results_learner_date` — ce dernier sert l'historique d'un apprenant sur une plage de dates, en fournissant à la fois le filtre et l'ordre.
+
+`node:sqlite` (`DatabaseSync`) est **synchrone**. `POST /api/quiz/:id/submit` est resté synchrone de bout en bout — c'est ce qui compte : son cycle lecture → vérification → écriture (la règle de tentative unique) ne peut pas être entrelacé avec une autre requête, aucune transaction n'y est donc nécessaire. Deux gestionnaires sont néanmoins `async` (`upload-pdf` et `regenerate`, qui attendent le modèle), et `db.js` porte **deux transactions explicites** en `BEGIN IMMEDIATE` / `COMMIT` avec `ROLLBACK` : le backfill de migration et la fusion de deux fiches.
 
 #### ⛔ Ne pas revenir à `better-sqlite3`
 
@@ -146,6 +184,31 @@ Le premier essai de persistance utilisait `better-sqlite3`. Il a **mis la produc
 
 **Node ≥ 22.13 est donc obligatoire** — d'où `engines.node` à `>=22.13.0` et le `.nvmrc`. Sur Node 20, `node:sqlite` n'existe pas.
 
+### ⚠️ Les migrations de schéma — à lire AVANT de toucher aux tables
+
+Le schéma reposait à l'origine sur `CREATE TABLE IF NOT EXISTS`, qui **n'altère jamais une table existante**. Une colonne ajoutée dans ce bloc n'aurait jamais été créée en production, **en silence**.
+
+Depuis l'annuaire d'apprenants, `server/src/db.js` porte une fonction `migrate()`, **placée entre le bloc `db.exec()` et l'objet `stmt`** — et nulle part ailleurs : `stmt` est préparé au chargement du module et lèverait s'il citait une colonne pas encore créée.
+
+| Opération | Base neuve | Base existante |
+| --- | :---: | :---: |
+| `CREATE TABLE IF NOT EXISTS` | ✅ | ✅ |
+| `CREATE INDEX IF NOT EXISTS` | ✅ | ✅ (table peuplée comprise) |
+| Colonne ajoutée au bloc `CREATE TABLE` | ✅ | ❌ **jamais appliquée** |
+| `ALTER TABLE … ADD COLUMN` | ✅ | ✅ (purement métadonnée, O(1)) |
+
+**Toute nouvelle colonne passe donc par `ALTER TABLE` dans `migrate()`**, avec détection par `PRAGMA table_info`.
+
+Un échec de migration marque `err.code = 'MIGRATION_FAILED'` et relance. `index.js` **doit** relancer sur ce code au lieu de basculer sur `db-memory` : sans cette discrimination, une migration ratée ne tue pas le serveur, elle fait **perdre silencieusement la persistance** en production, avec pour seule trace deux lignes de console.
+
+La migration est **sûre à interrompre** : chaque DDL est atomique, le backfill est encadré par `BEGIN IMMEDIATE`/`COMMIT`, et l'état intermédiaire laisse l'application pleinement fonctionnelle. Une base migrée reste par ailleurs **lisible par l'ancienne version applicative** — un retour arrière de déploiement ne demande aucun retour arrière de schéma.
+
+### Les fiches d'apprenants reprises de l'historique sont en quarantaine
+
+Le backfill crée une fiche par `player_key` distinct, avec `created_by = 'import'` et `suggestible = 0`. L'historique est intégralement préservé côté formateur, mais **rien de cet import n'apparaît dans les suggestions publiques** : les prénoms de recette ne deviennent pas un annuaire exposé.
+
+Une fiche sort de quarantaine de deux façons : le formateur la valide (`PATCH { suggestible: true }`), ou une vraie personne la **réclame** en passant un quiz — `ensureLearner()` résout par `name_key`, retrouve la fiche et la promeut. Grâce à l'unicité de `name_key`, c'est une **adoption**, pas un doublon : l'historique se recolle tout seul.
+
 ### Le repli en mémoire
 
 `index.js` charge le store dans un `try/catch`. Si `db.js` refuse de se charger, il bascule sur `server/src/db-memory.js`, qui expose exactement la même interface derrière des `Map`.
@@ -156,7 +219,7 @@ Conséquence : le pire scénario devient « le site tourne, les données ne surv
 
 ### Validation de la sortie du modèle
 
-`normalizeQuestions()` (`server/src/index.js:133`) s'exécute **à la création et à chaque écriture**. Elle :
+`normalizeQuestions()` (`server/src/index.js`, vers la ligne 173) s'exécute **à la création et à chaque écriture**. Elle :
 
 - retire le préfixe `A)` des options puis les renumérote proprement — entre 2 et 6 options ;
 - accepte la bonne réponse sous trois formes : lettre (`"B"`), index 1-based (`"2"`), ou texte exact de l'option ;
@@ -165,7 +228,7 @@ Conséquence : le pire scénario devient « le site tourne, les données ne surv
 
 C'est le garde-fou contre les sorties LLM malformées. Ne pas le contourner en écrivant directement en base.
 
-**Tentative unique :** les prénoms sont comparés sans accents ni casse. La normalisation (`nameKey()`, `server/src/db.js`) est stockée dans la colonne `results.player_key` : « Awa », « awa » et « Awâ » sont la même personne, et la comparaison se fait en SQL sur un index.
+**Tentative unique :** les noms sont comparés sans accents ni casse. La normalisation (`nameKey()`, `server/src/name-key.js`, importée par les deux stores) est stockée dans la colonne `results.player_key` : « Awa », « awa » et « Awâ » sont la même personne, et la comparaison se fait en SQL sur un index.
 
 ---
 
@@ -181,7 +244,7 @@ Tokens déclarés dans `client/src/index.css` sous `:root`, consommés partout v
 | `--ink` | `#1f1d24` | Titres, **texte sur bouton or** |
 | `--ink-deep` | `#17161a` | Fond de l'écran de quiz |
 | `--paper` | `#fbfaf8` | Fond des écrans clairs |
-| `--text-3` / `--text-4` | `#6b6459` / `#78716a` | Métadonnées, micro-copie |
+| `--text-3` / `--text-3-weak` | `#6b6459` / `#797263` | Métadonnées, micro-copie. L'ancien `--text-4` a été **fusionné** dans `--text-3` ; `--text-3-weak` a un contrat précis (plancher 4,58:1 sur `--paper`) |
 | `--ok` / `--err` / `--wa` | `#2e7d5b` / `#c0453b` / `#1f7a4c` | Juste / faux / WhatsApp |
 
 **Typographie :** Instrument Serif pour les titres (poids 400 uniquement), Instrument Sans pour l'interface, importées depuis Google Fonts en tête de `index.css`.
@@ -189,12 +252,12 @@ Tokens déclarés dans `client/src/index.css` sous `:root`, consommés partout v
 **Règles à tenir :**
 
 - Les contrastes ont été vérifiés au ratio **WCAG AA**. Ne pas éclaircir les gris, ne pas remettre du texte blanc sur fond or.
-- Cibles tactiles **jamais sous 44 px** ; options de quiz à 60 px, boutons d'action à 52–56 px.
-- Un seul point de rupture : **720 px**.
+- Cibles **primaires** jamais sous 44 px ; options de quiz à 60 px, boutons d'action à 52–56 px. Deux exceptions assumées : `.tool-btn` à 32 px (outils par question de la relecture) et `--h-chip` à 36 px (contrôle secondaire du thème encre).
+- Deux points de rupture : **720 px** (partout) et **480 px** (uniquement `.periode-champs`, qui passe à deux colonnes).
 - `@media (prefers-reduced-motion: reduce)` neutralise animations et transitions.
-- Icônes : `Icon.jsx` uniquement, pas d'emoji. Noms disponibles : `doc` `check` `close` `arrowRight` `arrowLeft` `chevronRight` `chevronLeft` `copy` `send` `download` `refresh` `list` `info` `edit` `search` `chart`.
+- Icônes : `Icon.jsx` uniquement, pas d'emoji. Noms disponibles : `doc` `check` `close` `arrowRight` `arrowLeft` `chevronRight` `chevronLeft` `copy` `send` `download` `refresh` `list` `info` `edit` `search` `chart` `chevronDown`.
   **La flèche circulaire (`refresh`) est réservée à « régénérer / refaire ». Le partage utilise `send`.**
-- Si la charte évolue, basculer `--gold` / `--gold-hover` / `--gold-deep` suffit : aucune couleur d'action n'est codée en dur ailleurs.
+- ⚠️ Si la charte évolue, basculer `--gold` / `--gold-hover` / `--gold-deep` **ne suffit PAS** : dix autres tokens or sont des littéraux indépendants (`--gold-deep-hover`, `--gold-soft`, `--gold-border`, `--gold-light`, `--gold-ink`, `--gold-track`, `--gold-line`, `--gold-line-ink`, `--gold-fill-soft`, `--gold-halo`). Le découplage est **volontaire** et documenté dans `index.css` — un token de contour n'a pas le même contrat de contraste qu'un token de remplissage. Il faut les reprendre un par un, en recalculant les ratios.
 
 Le logo Kemet est vert, l'interface est or — choix assumé et validé : le vert reste sur le logo, l'or porte l'action.
 
@@ -259,24 +322,69 @@ SQLite est un fichier posé sur un volume, et un volume Railway ne se monte que 
 
 Aucune sauvegarde automatique du fichier `.db`. Pour une copie de sûreté, passer par la CLI Railway ou un montage temporaire.
 
-### Les résultats ne sont visibles nulle part
+### ⛔ Le détail des réponses n'est PAS conservé
 
-`GET /api/quiz/:id/results` renvoie les participants et leurs scores, mais aucune interface ne l'affiche. Participants, moyenne et questions les plus ratées sont pourtant la valeur pédagogique de l'outil. Maintenant que les données survivent, c'est le chantier qui a le meilleur rapport valeur/effort.
+C'est la limitation la plus importante aujourd'hui, et le prochain chantier (§10).
 
-### Le formateur n'a aucune liste de ses quiz
+`results` garde `quiz_id`, `player_name`, `player_key`, `learner_id`, `score`, `total` et `submitted_at` — mais **aucun détail par question**. On sait qu'Aya a fait 3/5 ; on ne sait **jamais** sur quelles questions elle s'est trompée. Le serveur calcule pourtant la correction complète à chaque envoi (`index.js`, dans le gestionnaire de `submit`) et la renvoie à l'apprenant — puis la jette.
 
-Les quiz persistent, mais il n'existe aucune route pour les énumérer : un formateur qui perd son lien perd son quiz, alors qu'il est toujours en base. Un `GET /api/quizzes` protégé par mot de passe réglerait le cas.
+Conséquence pédagogique : impossible de répondre à « quelle question est ratée par tout le monde ? », qui est probablement la question la plus utile qu'un formateur puisse poser à cet outil.
+
+### La suggestion publique est énumérable
+
+Qui détient un lien de quiz **ouvert** peut parcourir l'espace des préfixes de 3 lettres — quelques milliers de requêtes — et reconstituer l'essentiel de l'annuaire. La limitation de débit renchérit l'attaque, elle ne l'empêche pas. Les seuls remèdes réels seraient d'authentifier l'apprenant, ou de ne pas avoir d'annuaire.
+
+Évolution qui le réglerait : rattacher l'annuaire à une **promotion** et ne suggérer que parmi les apprenants de la session du quiz. La surface passerait de « tout l'annuaire » à « une classe ».
+
+### La suggestion ne fonctionne que par le DÉBUT du nom
+
+Une fiche « Kouassi Aya » ne sortira jamais sur « aya ». Le formateur doit tenir une convention de saisie stable — prénom d'abord ou nom d'abord, mais toujours la même. À dire à l'utilisateur, ce n'est pas devinable.
+
+### ⚠️ `nameKey()` ne normalise ni les espaces internes ni les traits d'union
+
+« Aya  Koffi » (double espace) et « Aya Koffi » sont deux personnes, avec deux fiches, deux historiques et deux tentatives uniques. « Marie-Claire » ≠ « Marie Claire ».
+
+**Ne PAS corriger `server/src/name-key.js` sans migration dédiée.** Les `results.player_key` déjà stockés cesseraient de correspondre à ce que la fonction renvoie : la règle de tentative unique casserait en silence sur tout l'historique, et le regroupement du backfill divergerait de la résolution. C'est un chantier à part, avec sa propre réécriture de `player_key`.
+
+### Aucun test automatisé
+
+Ni script `test`, ni répertoire de tests. Toute la vérification est manuelle. C'est le point faible de fond du projet.
 
 ### Divers
 
 - Les polices sont chargées depuis Google Fonts — à auto-héberger pour un fonctionnement hors ligne.
 - `client/public/kemet-logo.svg` n'est plus référencé (remplacé par le PNG recadré), il peut être supprimé.
 - `client/public/icons.svg` et `client/src/assets/` (`react.svg`, `vite.svg`) sont des restes du gabarit Vite, inutilisés.
-- L'archive `Amélioration UXUI appli quiz.zip` à la racine n'est pas suivie par git : son contenu est intégré, elle peut être supprimée.
+- Non suivis par git à la racine, et à arbitrer : l'archive `Amélioration UXUI appli quiz.zip` (son contenu est intégré, elle peut disparaître), ainsi que `design-systems/`, `taste/` et `tokens/`.
 
 ---
 
 ## 9. État des vérifications
+
+### ⚠️ Le lot « annuaire d'apprenants » n'a PAS été éprouvé en production
+
+Livré les 24 et 26/08/2026 (`1ed0c86`, `c8a39c3`, `24d8c62`). Tout ce qui suit dans cette section date des 29 et 30/07 et lui est **antérieur** : ne lisez pas ces tableaux comme une validation de l'annuaire.
+
+**Ce qui a bien été vérifié, mais en local :**
+
+| Point | Méthode | Résultat |
+| --- | --- | --- |
+| Migration sur base de forme production | Base reconstruite avec l'**ancien** code (3 quiz, 11 participations, graphies incohérentes, lignes à clé vide), puis migrée sur des copies | ✅ schéma créé, backfill correct, **non-rejeu** au second démarrage, interruption entre l'`ALTER` et le `COMMIT` sans fiche partielle |
+| Retour arrière possible | Base migrée relue par l'ancienne version applicative | ✅ aucun retour arrière de schéma nécessaire |
+| Route publique de suggestion | `curl` : `q=*`, `q=[a-z]`, `%00`, pleines chasses unicode, 60 requêtes rapides | ✅ liste vide partout, plafond de 5 tenu, `429` au-delà du seau |
+| Bornes de période | « au 3 août » sur une participation de 18h35 ce jour-là | ✅ incluse ; « au 2 août » l'exclut ; 31 février et fin < début refusés |
+| Moyenne | 1/2 et 9/10 | ✅ 70 %, et non 83,3 % qu'aurait donné `SUM/SUM` |
+| Parité des deux stores | Harnais différentiel sur les 9 fonctions d'annuaire | ✅ après correction de trois écarts (tri inversé, préfixe vide qui déversait l'annuaire, repli du `limit`) |
+| Saisie assistée | Parcours complet dans le navigateur : quiz passé sous un nom neuf, puis nom suggéré ; flèches, Échap, confirmation, champ vide | ✅ et **0 px** de déplacement du bouton « Commencer » à l'apparition de la liste |
+
+**Ce qui n'a PAS été vérifié et devrait l'être en premier :**
+
+- La migration **sur la vraie base de production** (elle a tourné sur des copies et sur la base de développement, pas sur Railway).
+- Le comportement de l'annuaire **à plusieurs dizaines de fiches** — le plafond de 5 suggestions n'a été éprouvé que sur un jeu minuscule.
+- La fusion de deux fiches **en production**.
+- Le volume Railway toujours attaché après ce déploiement : l'écran Apprenants affiche un bandeau explicite si ce n'est plus le cas.
+
+---
 
 **Vérifié en production le 29/07/2026 :**
 
@@ -355,15 +463,54 @@ Sur ce modèle, le raisonnement est **actif par défaut** et puise dans le même
 
 ---
 
-## 10. Pistes pour la suite
+## 10. Prochain chantier — conserver le détail des réponses
+
+**C'est le chantier demandé par l'utilisateur, à ouvrir en priorité.**
+
+### Le besoin, dans ses mots
+
+> « On sait qu'Aya a fait 3/5, jamais sur quelles questions elle s'est trompée. »
+
+Et derrière, la question qu'un formateur d'officine veut vraiment poser : **quelle question est ratée par tout le monde ?** C'est elle qui dit quoi reprendre en formation.
+
+### Ce qui existe déjà, et qu'il suffit de ne plus jeter
+
+`server/src/index.js`, gestionnaire de `POST /api/quiz/:id/submit` : la correction complète est **déjà calculée** — pour chaque question, la réponse donnée, la bonne réponse, et si elle était juste. Elle part dans la réponse HTTP, puis disparaît. Rien n'est à recalculer, tout est à persister.
+
+### Les décisions à prendre avec l'utilisateur, avant d'écrire
+
+1. **Grain de stockage.** Une table `answers(result_id, question_index, given, correct)` — normalisée, interrogeable, permet « la question 3 est ratée par 80 % » d'une requête. Ou une colonne JSON sur `results` — plus simple, mais rend toute statistique agrégée pénible. **Recommandation : la table.** C'est précisément ce que le JSON empêcherait de faire.
+2. **Le texte de la question.** Les questions d'un quiz sont modifiables après coup (`PATCH /api/quiz/:id`). Faut-il figer l'énoncé au moment de la réponse, comme `player_name` l'est déjà, ou toujours relire le quiz courant ? Ce n'est pas un détail : sans figeage, une statistique portera sur un énoncé qui a changé.
+3. **Ce qu'on montre, et à qui.** Une vue « questions les plus ratées » par quiz ? Le détail par apprenant dans son historique ? Les deux ? L'apprenant voit déjà sa correction à l'envoi — la question porte sur le formateur.
+4. **Rétroactivité.** Les évaluations déjà enregistrées n'ont aucun détail et n'en auront jamais. L'écran doit le dire, plutôt que d'afficher un vide qu'on prendra pour un bug.
+
+### Le chemin technique
+
+- **Migration obligatoire** — relire §5, la section sur `migrate()`. Une nouvelle table passe par `CREATE TABLE IF NOT EXISTS` dans `migrate()`, et **la parité de `server/src/db-memory.js` doit suivre dans le même lot** : 21 exports identiques, dans le même ordre.
+- Index à prévoir : `(result_id)` pour le détail d'une participation, `(quiz_id, question_index)` pour l'agrégat « les plus ratées » — ce dernier suppose de porter `quiz_id` sur la table, ou une jointure par `results`.
+- Volume : 30 questions × N participations. Sur un usage d'officine, c'est négligeable.
+- Le corps de `POST /submit` ne change pas. Seul l'enregistrement s'enrichit.
+
+### Pièges déjà payés sur ce projet, à ne pas repayer
+
+- **`AVG(score * 100.0 / total)`** — sans le `.0`, `INTEGER/INTEGER` est une division entière en SQLite et toute moyenne sort à zéro.
+- **Filtre de dates dans le `ON` d'une `LEFT JOIN`**, jamais dans le `WHERE` : dans le `WHERE`, il annule la jointure externe et fait disparaître les lignes sans correspondance.
+- **Bornes de période** : `>= from AND < toExclusive`, où `toExclusive` est minuit du lendemain. `<= '2026-03-31'` perd toute la journée du 31.
+- **Écrire le CSS APRÈS le JSX**, en lisant le code réel. Trois fois sur ce projet, un agent a nommé une classe qu'un autre n'a pas écrite, et la dernière fois c'est parti en production.
+- **Ne jamais `git add .`** quand deux chantiers cohabitent dans l'arbre de travail.
+
+---
+
+## 11. Autres pistes
 
 | Chantier | Intérêt | Effort |
 | --- | --- | --- |
-| **Tableau de bord des résultats** | Valeur pédagogique de l'outil ; la route existe déjà, il manque l'écran | Moyen |
-| **Liste des quiz du formateur** | Le formateur ne perd plus ses liens ; les quiz sont en base, il manque `GET /api/quizzes` | Faible |
-| Export CSV/Excel des scores | Suivi administratif | Faible |
-| Mode révision (réponse dévoilée à chaque question) | Usage entraînement | Faible |
+| **Détail des réponses** (§10) | La vraie valeur pédagogique : quoi reprendre en formation | Moyen |
+| Rattacher l'annuaire à une promotion | Referme l'énumération de la route publique (§8) | Moyen |
+| Normaliser espaces et traits d'union dans `nameKey` | Corrige un vrai défaut — **exige sa propre migration** (§8) | Moyen |
+| Tests automatisés | Aucun aujourd'hui ; tout repose sur la vérification manuelle | Moyen |
 | Auto-hébergement des polices | Performance, hors ligne | Faible |
 | Sauvegarde périodique de la base | Filet de sécurité | Faible |
+| Mode révision (réponse dévoilée à chaque question) | Usage entraînement | Faible |
 
-> La persistance (chantier n° 1 de la version précédente de ce document) est faite : SQLite sur volume Railway, voir §5 et §7. Elle débloque les quatre premières lignes ci-dessus.
+> Les chantiers « tableau de bord des résultats », « liste des quiz du formateur » et « export CSV » de la version précédente de ce document sont **faits** — voir §5 et §8.
