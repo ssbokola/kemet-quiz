@@ -20,8 +20,10 @@
  * Migration : sans objet. Les Map naissent vides à chaque démarrage, isEphemeral
  * vaut déjà true, il n'y a aucun existant à rattraper.
  */
-const { nameKey } = require('./name-key');
+const { nameKey, motsDeCle } = require('./name-key');
 const { newId } = require('./ids');
+const { fusionnerSuggestions } = require('./suggestion');
+const { groupesProbables } = require('./similarite');
 
 const quizzes = new Map();
 const results = new Map(); // quizId -> tableau de participations
@@ -203,8 +205,11 @@ function duplicateError(existing) {
 }
 
 /**
- * Suggestions à la frappe. Équivaut au `name_key GLOB 'ay*'` de db.js, donc
- * startsWith sur la clé, et rien d'autre : pas de recherche au milieu du mot.
+ * Suggestions à la frappe. Équivaut aux deux GLOB de db.js :
+ *  · `name_key GLOB 'ay*'`      → startsWith sur la clé (tête de nom) ;
+ *  · `name_key GLOB '* ay*'`    → un mot NON INITIAL qui commence pareil,
+ *    d'où motsDeCle(...).slice(1) — l'espace du motif GLOB et le découpage de
+ *    motsDeCle doivent trancher identiquement.
  *
  * Le store répond exactement à ce qu'on lui demande, GLOB comme startsWith :
  * c'est index.js qui doit refuser un préfixe trop court, sans quoi la liste
@@ -217,13 +222,31 @@ function suggestLearners(prefixKey, limit) {
   // meme garde-fou existe dans db.js. Il est pose ICI EN PLUS de la validation
   // d'index.js : la confidentialite ne doit pas dependre d'un seul rempart.
   if (!prefix) return [];
-  const found = [...learners.values()]
-    .filter((l) => l.suggestible && l.nameKey.startsWith(prefix))
-    .sort((a, b) => compareKeys(a.nameKey, b.nameKey));
+
   // LIMIT absent ou absurde : on borne, comme db.js. « Rendre tout » serait
   // ici le pire repli possible sur une fonction qui alimente une route publique.
   const max = Number.isInteger(limit) && limit > 0 ? limit : 8;
-  return found.slice(0, max).map((l) => l.displayName);
+
+  const proposables = [...learners.values()]
+    .filter((l) => l.suggestible)
+    .sort((a, b) => compareKeys(a.nameKey, b.nameKey));
+
+  const enTete = proposables.filter((l) => l.nameKey.startsWith(prefix));
+  // Le NOT GLOB @debut de db.js : on exclut ce que la première famille rend
+  // déjà, pour que les deux listes arrivent disjointes à la fusion.
+  const enMilieu = proposables.filter(
+    (l) =>
+      !l.nameKey.startsWith(prefix) &&
+      motsDeCle(l.nameKey)
+        .slice(1)
+        .some((mot) => mot.startsWith(prefix))
+  );
+
+  return fusionnerSuggestions(
+    enTete.slice(0, max).map((l) => l.displayName),
+    enMilieu.slice(0, max).map((l) => l.displayName),
+    max
+  );
 }
 
 /** La fiche correspondant à un nom tapé, ou null. Ne crée jamais rien. */
@@ -426,6 +449,39 @@ function mergeLearners(sourceId, intoId) {
   return { moved };
 }
 
+/**
+ * Les groupes de fiches qui désignent PROBABLEMENT la même personne.
+ * Même sortie que db.js — c'est similarite.js qui décide, ici comme là-bas ;
+ * seul le rassemblement des compteurs diffère.
+ */
+function listDuplicateCandidates() {
+  const compte = new Map();
+  const dernier = new Map();
+  for (const { entry } of allEntries()) {
+    if (!entry.learnerId) continue;
+    compte.set(entry.learnerId, (compte.get(entry.learnerId) || 0) + 1);
+    const precedent = dernier.get(entry.learnerId);
+    if (!precedent || String(entry.submittedAt) > String(precedent)) {
+      dernier.set(entry.learnerId, entry.submittedAt);
+    }
+  }
+  return groupesProbables(
+    [...learners.values()]
+      // Même ordre d'entrée que le ORDER BY name_key de db.js : les deux
+      // stores doivent produire des groupes identiques, membres compris.
+      .sort((a, b) => compareKeys(a.nameKey, b.nameKey))
+      .map((l) => ({
+        id: l.id,
+        displayName: l.displayName,
+        nameKey: l.nameKey,
+        createdBy: l.createdBy,
+        suggestible: Boolean(l.suggestible),
+        attempts: compte.get(l.id) || 0,
+        lastSubmittedAt: dernier.get(l.id) || null,
+      }))
+  );
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -448,4 +504,7 @@ module.exports = {
   listLearnerHistory,
   findResultByLearner,
   mergeLearners,
+  // 22e fonction, au MÊME RANG que dans db.js. Le test de parité échoue si
+  // l'une des deux listes bouge sans l'autre.
+  listDuplicateCandidates,
 };

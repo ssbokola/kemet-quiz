@@ -3,6 +3,7 @@ import ApprenantsListe from './ApprenantsListe';
 import ApprenantHistorique from './ApprenantHistorique';
 import AnnuaireApprenants from './AnnuaireApprenants';
 import FicheApprenant from './FicheApprenant';
+import DoublonsProbables from './DoublonsProbables';
 
 /**
  * Écran « Apprenants » — espace formateur uniquement. Il expose les noms et les
@@ -25,7 +26,7 @@ import FicheApprenant from './FicheApprenant';
  * d'entrer. Ne jamais fusionner deux de ces vues dans un seul composant.
  */
 function Apprenants({ onBack }) {
-  const [vue, setVue] = useState('liste'); // liste | historique | annuaire | fiche
+  const [vue, setVue] = useState('liste'); // liste | historique | annuaire | fiche | doublons
   // L'apprenant ouvert : { id, displayName }. Le nom voyage avec l'identifiant
   // pour que la vue de détail ait un titre à afficher dès son premier rendu,
   // avant même que sa requête ait répondu.
@@ -56,6 +57,22 @@ function Apprenants({ onBack }) {
     setVue('annuaire');
   };
 
+  // Apres une fusion faite depuis l'ecran des doublons, on RESTE sur cet ecran :
+  // le formateur en traite plusieurs a la suite.
+  //
+  // Mais c'est alors le MEME type de composant a la MEME position : React ne le
+  // remonte pas, l'effet de montage ne rejoue pas, la liste resterait perimee
+  // (la fiche fusionnee y figurerait encore) et le focus ne reviendrait pas sur
+  // le titre. C'est exactement le defaut que l'en-tete de ce fichier decrit. Le
+  // compteur sert de `key` : il force le demontage/remontage, donc le
+  // rechargement et la reprise du focus.
+  const [rafraichir, setRafraichir] = useState(0);
+  const apresFusionDoublon = (texte) => {
+    setMessageEntrant(texte || '');
+    setRafraichir((n) => n + 1);
+    setVue('doublons');
+  };
+
   // `vue` et `apprenant` sont toujours écrits ensemble, dans le même
   // gestionnaire : une vue de détail sans fiche n'arrive pas. Ce repli n'est
   // qu'un filet — il renvoie chaque vue de détail vers celle par laquelle on y
@@ -82,10 +99,22 @@ function Apprenants({ onBack }) {
     );
   }
 
+  if (vueSure === 'doublons') {
+    return (
+      <DoublonsProbables
+        key={`doublons-${rafraichir}`}
+        onRetour={aller('annuaire')}
+        onFusion={apresFusionDoublon}
+        messageEntrant={messageEntrant}
+      />
+    );
+  }
+
   if (vueSure === 'annuaire') {
     return (
       <AnnuaireApprenants
         onOuvrirFiche={ouvrir('fiche')}
+        onDoublons={aller('doublons')}
         onRetour={aller('liste')}
         messageEntrant={messageEntrant}
       />

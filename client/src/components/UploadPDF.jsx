@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import Icon from './Icon';
@@ -10,6 +11,8 @@ import {
   setAdminPassword,
   MESSAGE_RESEAU,
 } from '../api';
+import { EXPIRY_OPTIONS } from '../diffusion';
+import { utilisateurAAgi } from '../ecran';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -20,14 +23,8 @@ const DIFFICULTY_OPTIONS = [
   { value: 'difficile', label: 'Difficile', desc: "cas d'application" },
 ];
 
-// `resume` : le mot qui représente l'option quand le tiroir « Diffusion du lien »
-// est replié. Chaque résumé est AUTOPORTANT — il nomme sa propre dimension —
-// parce qu'il se lit hors de son libellé : « Libre » seul ne dirait pas de quoi.
-const EXPIRY_OPTIONS = [
-  { value: 0, label: 'Sans limite', resume: 'Lien sans limite' },
-  { value: 24, label: '24 h', resume: 'Lien valide 24 h' },
-  { value: 168, label: '7 jours', resume: 'Lien valide 7 jours' },
-];
+// EXPIRY_OPTIONS vit désormais dans client/src/diffusion.js : l'écran de
+// partage propose les mêmes durées, et deux listes séparées dériveraient.
 
 const ATTEMPT_OPTIONS = [
   { value: true, label: '1 tentative', desc: 'un score par apprenant', resume: '1 tentative' },
@@ -50,27 +47,12 @@ const STAGE_LABELS = {
 
 const MINUTES_PER_QUESTION = 0.5;
 
-// Ce module est évalué au chargement de l'application, donc AVANT toute
-// interaction possible. Le drapeau sépare les deux façons dont cet écran arrive
-// à l'affichage : le tout premier rendu de l'application (mot de passe déjà en
-// session, aucun clic ni aucune touche encore émis) et un changement d'écran,
-// qui suppose TOUJOURS une action de l'utilisateur — validation du mur de mot
-// de passe, « Nouveau quiz » depuis l'écran de partage. Seul le second cas
-// justifie de reprendre le focus.
-let userHasActed = false;
-
-if (typeof window !== 'undefined') {
-  const markActed = () => {
-    userHasActed = true;
-    window.removeEventListener('pointerdown', markActed, true);
-    window.removeEventListener('keydown', markActed, true);
-  };
-  // En phase de capture : l'écouteur passe avant le gestionnaire React qui
-  // provoque le changement d'écran, le drapeau est donc déjà vrai quand le
-  // montage suivant le consulte.
-  window.addEventListener('pointerdown', markActed, true);
-  window.addEventListener('keydown', markActed, true);
-}
+// Le drapeau « l'utilisateur a-t-il agi ? » vivait ici, parce que cet écran
+// était le SEUL capable d'être le tout premier monté — AdminPage démarrait
+// toujours à l'étape « upload ». Avec une adresse par écran, n'importe lequel
+// peut désormais l'être : le drapeau est monté dans client/src/ecran.js, où il
+// a aussi gagné l'écoute de `popstate` — le bouton Précédent du navigateur ne
+// produit ni pointerdown ni keydown.
 
 // État « aucune erreur ». Partagé par les deux états d'erreur pour qu'ils
 // démarrent sur la MÊME référence : la recopie du montage ne change alors rien
@@ -103,7 +85,7 @@ async function extractTextFromPdf(file, onProgress) {
   return { text: text.trim(), pages: pdf.numPages };
 }
 
-function UploadPDF({ onQuizGenerated, onVoirResultats, onVoirApprenants }) {
+function UploadPDF({ onQuizGenerated, lienMesQuiz, lienApprenants }) {
   const [file, setFile] = useState(null);
   const [pageCount, setPageCount] = useState(null);
   const [title, setTitle] = useState('');
@@ -159,9 +141,9 @@ function UploadPDF({ onQuizGenerated, onVoirResultats, onVoirApprenants }) {
   // voler le focus au chargement d'une page est une régression d'accessibilité
   // — l'utilisateur doit pouvoir commencer par le haut du document. Aucun
   // délai ni aucune propriété venant d'un autre composant n'est nécessaire pour
-  // trancher : `userHasActed` est faux tant que l'utilisateur n'a rien fait.
+  // trancher : `utilisateurAAgi()` est faux tant que l'utilisateur n'a rien fait.
   useEffect(() => {
-    if (userHasActed) formHeadingRef.current?.focus();
+    if (utilisateurAAgi()) formHeadingRef.current?.focus();
   }, []);
 
   // Un seul input fichier est monté à la fois : dans la dropzone (aucun
@@ -530,19 +512,24 @@ function UploadPDF({ onQuizGenerated, onVoirResultats, onVoirApprenants }) {
           {/* Deux accès désormais : .tag-row les tient côte à côte et les fait
               passer à la ligne plutôt que d'écraser le titre sur un écran
               étroit. */}
-          {(onVoirResultats || onVoirApprenants) && (
+          {/* De vrais <a> et non plus des <button> : ouvrir « Mes quiz » dans
+              un second onglet exige un href. Le poids visuel ne bouge pas d'un
+              gramme — même .tag-row, même .app-bar-link, même place — seul le
+              libellé devient vrai : cet accès mène à la liste des quiz, d'où
+              l'on atteint aussi bien le partage que les résultats. */}
+          {(lienMesQuiz || lienApprenants) && (
             <div className="tag-row">
-              {onVoirResultats && (
-                <button type="button" className="app-bar-link" onClick={onVoirResultats}>
+              {lienMesQuiz && (
+                <Link className="app-bar-link" to={lienMesQuiz}>
                   <Icon name="list" size={15} width={1.7} />
-                  Résultats
-                </button>
+                  Mes quiz
+                </Link>
               )}
-              {onVoirApprenants && (
-                <button type="button" className="app-bar-link" onClick={onVoirApprenants}>
+              {lienApprenants && (
+                <Link className="app-bar-link" to={lienApprenants}>
                   <Icon name="chart" size={15} width={1.7} />
                   Apprenants
-                </button>
+                </Link>
               )}
             </div>
           )}

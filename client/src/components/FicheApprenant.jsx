@@ -2,22 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import RadioGroup from './RadioGroup';
 import { adminFetchOuReseau, messageErreur, MESSAGE_RESEAU } from '../api';
+import { phraseFusion } from '../nom';
 
 // Aucune erreur. Partagé par les deux états pour qu'ils démarrent sur la MÊME
 // référence : la recopie du montage ne change alors rien.
 const AUCUNE_ERREUR = { texte: '', n: 0 };
 
-// Ce que la fusion va faire, en toutes lettres et avec les vrais noms. Le cas
-// « aucune évaluation » est dit lui aussi : « les 0 évaluations passeront sous »
-// serait du charabia, et taire la phrase laisserait croire à un déplacement.
-function phraseFusion(source, cible, n) {
-  const combien = Number.isFinite(n) ? n : 0;
-  const deplacement =
-    combien > 0
-      ? `Les ${combien} évaluation${combien > 1 ? 's' : ''} de ${source} passeront sous la fiche de ${cible}.`
-      : `${source} n’a aucune évaluation enregistrée : rien ne sera déplacé.`;
-  return `${deplacement} La fiche de ${source} disparaîtra ensuite de l’annuaire.`;
-}
+// phraseFusion vit désormais dans client/src/nom.js : l'écran des doublons
+// probables pose la même question, et deux formulations pour un geste
+// irréversible seraient un défaut.
 
 /**
  * Fiche d'un apprenant — espace formateur uniquement.

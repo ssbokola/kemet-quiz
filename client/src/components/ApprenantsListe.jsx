@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import { adminFetchOuReseau, messageErreur, MESSAGE_RESEAU } from '../api';
 import { formatJour } from '../dates';
+import { useFocusAuMontage } from '../ecran';
 
 // Aucune erreur. Partagé par les deux états pour qu'ils démarrent sur la MÊME
 // référence, comme dans QuizResults : la recopie du montage ne change alors rien.
@@ -114,6 +115,7 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
   const [erreur, setErreur] = useState(AUCUNE_ERREUR);
   const [annoncee, setAnnoncee] = useState(AUCUNE_ERREUR);
   const [annonce, setAnnonce] = useState('');
+  const [recherche, setRecherche] = useState('');
   const titreRef = useRef(null);
 
   // Le numéro d'occurrence s'incrémente à CHAQUE écriture, effacement compris :
@@ -125,9 +127,11 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
   // titre au montage. L'écran précédent est démonté avec l'élément focalisé.
   // Le focus va au TITRE, jamais au message d'erreur : celui-ci vit dans une
   // région role="alert" et serait sinon annoncé deux fois.
-  useEffect(() => {
-    titreRef.current?.focus();
-  }, []);
+  //
+  // Garde partagée depuis que /formateur/apprenants existe : cette vue est
+  // celle qui s'ouvre par défaut, elle peut donc être la première montée au
+  // chargement du document — et prendre le focus alors serait le voler.
+  useFocusAuMontage(titreRef);
 
   // Aucun message n'est rendu dans le commit qui monte sa région : une région
   // live qui naît AVEC son texte n'est pas annoncée de façon fiable.
@@ -182,9 +186,32 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
   // nombre : on dit ce que fait l'écran plutôt que d'écrire « 0 apprenant »,
   // qui serait faux pendant tout le chargement. Une liste vide garde la même
   // phrase : c'est l'état vide, plus bas, qui l'explique.
+  // Filtre CÔTÉ CLIENT, sur la liste déjà chargée. Un paramètre serveur
+  // imposerait une validation, une branche SQL (et GLOB n'a pas de clause
+  // ESCAPE), un anti-rebond, un état de chargement et un chemin d'erreur à
+  // chaque frappe — pour quelques centaines de fiches déjà en mémoire.
+  // À revoir au-delà de ~2 000 apprenants, pas avant.
+  //
+  // La comparaison ignore la casse et les accents, comme nameKey côté serveur,
+  // SANS en dépendre : ceci filtre un affichage, cela décide d'une identité.
+  // Et elle cherche partout dans le nom, pas seulement au début : « kone »
+  // doit trouver « Bintou Kone ».
+  const sansAccent = (s) =>
+    String(s || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase();
+  const q = sansAccent(recherche.trim());
+  // NE PAS retrier : le serveur rend déjà la liste triée, et retrier ici ferait
+  // diverger cet écran de tous les autres.
+  const filtree = liste && q ? liste.filter((a) => sansAccent(a.displayName).includes(q)) : liste;
+  const filtreActif = Boolean(q);
+
   const sousTitre =
     liste && liste.length > 0
-      ? `${liste.length} apprenant${liste.length > 1 ? 's' : ''} · moyenne et historique de chacun`
+      ? filtreActif
+        ? `${filtree.length} apprenant${filtree.length > 1 ? 's' : ''} sur ${liste.length}`
+        : `${liste.length} apprenant${liste.length > 1 ? 's' : ''} · moyenne et historique de chacun`
       : 'La moyenne et l’historique de chaque personne qui a passé un quiz.';
 
   return (
@@ -261,9 +288,41 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
         </div>
       )}
 
-      {!chargement && liste && liste.length > 0 && (
+      {/* La recherche n'apparaît qu'une fois qu'il y a de quoi chercher : sur
+          cinq fiches elle serait du mobilier. */}
+      {!chargement && liste && liste.length > 5 && (
+        <div className="field">
+          <label className="field-label" htmlFor="recherche-apprenant">
+            Rechercher un apprenant
+          </label>
+          <input
+            id="recherche-apprenant"
+            type="search"
+            className="input"
+            placeholder="Prénom ou nom"
+            value={recherche}
+            onChange={(e) => setRecherche(e.target.value)}
+            autoComplete="off"
+          />
+        </div>
+      )}
+
+      {!chargement && filtreActif && filtree && filtree.length === 0 && (
+        <div className="empty-state">
+          <span className="empty-state-icon" aria-hidden="true">
+            <Icon name="search" size={22} width={1.6} />
+          </span>
+          <h2>Aucun apprenant ne correspond</h2>
+          <p>Rien ne contient « {recherche.trim()} ».</p>
+          <button type="button" className="btn btn--ghost" onClick={() => setRecherche('')}>
+            Effacer la recherche
+          </button>
+        </div>
+      )}
+
+      {!chargement && filtree && filtree.length > 0 && (
         <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
-          {liste.map((a) => {
+          {filtree.map((a) => {
             const { initiale, meta, tag, enQuarantaine, aria } = decrireApprenant(a);
             return (
               <button

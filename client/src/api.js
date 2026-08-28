@@ -130,6 +130,43 @@ export async function adminFetchOuReseau(url, options = {}) {
   }
 }
 
+/**
+ * Le rituel complet d'un appel formateur, en une fonction : joindre, tester le
+ * statut AVANT de toucher au corps, traduire l'échec en français, analyser.
+ *
+ * Ce n'est pas l'URL qui était dupliquée dans les écrans — c'étaient ces neuf
+ * lignes, recopiées dans AdminPage (trois fois), QuizResults, ApprenantsListe,
+ * AnnuaireApprenants et ReviewQuestions. Chaque étape a sa raison, et chaque
+ * recopie était une occasion d'en perdre une.
+ *
+ * L'ordre est le contrat : `messageErreur` CONSOMME la réponse et un corps ne
+ * se lit qu'une fois. Tester `res.ok` d'abord évite aussi l'erreur d'analyse
+ * JSON quand l'API est arrêtée — le proxy renvoie alors une page HTML.
+ *
+ * L'erreur levée porte `statut` : l'écran de partage doit distinguer un quiz
+ * introuvable (404, un écran à part entière) d'une panne (tout le reste).
+ * Le fichier garde sa ligne « primitives génériques » : aucune route n'est
+ * nommée ici, elles vivent dans quiz-api.js.
+ */
+export async function adminJson(url, { repli = 'Une erreur est survenue.', ...options } = {}) {
+  let res;
+  try {
+    res = await adminFetch(url, options);
+  } catch {
+    throw new Error(MESSAGE_RESEAU);
+  }
+  if (!res.ok) {
+    const err = new Error(await messageErreur(res, repli));
+    err.statut = res.status;
+    throw err;
+  }
+  const data = await res.json().catch(() => null);
+  if (!data) {
+    throw new Error(`Le serveur a renvoyé une réponse inattendue. ${repli}`);
+  }
+  return data;
+}
+
 export async function checkAdminPassword(pw) {
   const res = await fetchOuReseau('/api/admin/check', {
     method: 'POST',

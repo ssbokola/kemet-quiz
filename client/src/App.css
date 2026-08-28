@@ -881,6 +881,17 @@
   cursor: pointer;
 }
 
+/* Dans « Mes quiz », la ligne est un <a> et non plus un <button> — c'est ce qui
+   rend possible le Ctrl+clic, le clic du milieu et « copier l'adresse du lien »,
+   donc deux quiz dans deux onglets.
+   Sans cette ligne, la règle `a { color: var(--gold-deep) }` d'index.css
+   repeindrait le titre de chaque ligne en or : .recent-row ne déclare PAS de
+   couleur, elle ne protège que la bordure (raccourci `border`, 0-1-0) et hérite
+   de `a` pour le reste. 0-1-1, l'emporte quel que soit l'ordre des feuilles. */
+a.recent-row {
+  color: inherit;
+}
+
 /* Les lignes d'apprenants réutilisent la même forme mais ne sont PAS des
    commandes : ni curseur de clic, ni survol, qui promettraient une action
    inexistante. Même principe que .q-option--edit. */
@@ -1413,6 +1424,25 @@
   font-weight: 600;
 }
 
+/* Trois états à dire, contre deux auparavant : le `style` en ligne que portait
+   AdminPage ne suffit plus. L'état nominal reste l'aplat vert ci-dessus.
+   Aucune couleur neuve — --err-bg / --err-text est le couple déjà porté par
+   .error-msg, celui-là même que l'ancien style en ligne appliquait. */
+.share-badge--closed {
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+
+/* Un quiz expiré n'est PAS une erreur : c'est une fin de vie normale, et lui
+   donner le rouge de l'échec mettrait sur le même plan « quelque chose a raté »
+   et « le délai est passé ». Aplat neutre, recette de .tag.
+   --text-2 sur --paper-2 : 7,66:1, très au-dessus des 4,5:1 exigés à 12 px —
+   taille qui n'ouvre droit à aucune exemption « grand texte ». */
+.share-badge--expired {
+  background: var(--paper-2);
+  color: var(--text-2);
+}
+
 .share-title {
   font-family: var(--serif);
   font-size: var(--d-screen);
@@ -1731,8 +1761,74 @@
    Écartés : réserver la hauteur à vide (240 px perdus en permanence sur l'écran
    le plus fréquenté) ; `margin-top: auto`, strictement équivalent à
    space-between pour deux enfants, donc sans effet. */
+/* Repli là où :has() manque — Firefox 101→120 et Safari < 15.4, les mêmes
+   moteurs que les deux @supports de .dropzone et .file-chip-change. Sans bloc
+   de conteneur positionné, .suggestions prend le bloc initial pour référence et
+   `top: 100%` projette la liste une HAUTEUR DE FENÊTRE plus bas : la saisie
+   assistée disparaît purement et simplement. Positionner tous les .field est
+   sans effet ailleurs — .suggestions est leur seul descendant en absolu. */
+@supports not selector(:has(*)) {
+  .field {
+    position: relative;
+  }
+}
+
 .field:has(> .suggestions) {
   position: relative;
+}
+
+/* Le nom a été retenu dans la liste : le champ est figé (readOnly) et il faut
+   que ça se voie avant qu'on essaie d'y taper. Trois signaux redondants, dont
+   deux non colorés (WCAG 1.4.1) : l'aplat ci-dessous, la mention « Nom retenu »
+   et l'icône de validation.
+   Placée APRÈS .input (même spécificité 0-1-0, l'ordre tranche) et sous
+   .input:focus (0-2-0), qui doit continuer de gagner.
+   --gold-line : 3,72:1 sur --paper-3 (le fond de page) et 3,87:1 sur l'aplat,
+   des deux côtés du trait — au-dessus des 3:1 de WCAG 1.4.11. */
+.input--retenu {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+}
+
+.nom-retenu {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.nom-retenu-etat {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-label);
+  font-weight: 600;
+  /* --ok-text sur --paper-3 : 6,68:1. --ok y tomberait à 4,16:1, sous le seuil
+     de 4,5:1 exigé à 13 px — il ne convient qu'aux aplats et aux icônes. */
+  color: var(--ok-text);
+}
+
+/* Géométrie de .btn-danger-link, la sortie textuelle discrète du dépôt, mais
+   au plancher tactile de 44 px : contrairement à « Fermer le quiz », ce bouton
+   vit sur l'écran de l'APPRENANT, au pouce, sur téléphone. C'est la seule
+   porte de sortie d'un champ figé — la manquer enferme.
+   --gold-deep sur --paper-3 : 4,70:1. */
+.nom-retenu-defaire {
+  margin-left: auto;
+  min-height: var(--h-min);
+  padding: var(--s-2) var(--s-3);
+  background: none;
+  border: 0;
+  border-radius: var(--r-xs);
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--gold-deep);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.nom-retenu-defaire:hover {
+  background: var(--gold-fill-soft);
+  color: var(--gold-deep-hover);
 }
 
 .suggestions {
@@ -1791,6 +1887,43 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-5);
+}
+
+/* Doublons probables. Un GROUPE par carte, et non une paire : sur les vraies
+   données une même personne saisie de quatre façons produit six paires — six
+   cartes pour une personne se lisent mal.
+   Même géométrie que .confirm-inline : .card ne porte aucun padding, chaque
+   emploi pose le sien. */
+.doublon-groupe {
+  padding: var(--s-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+/* Pourquoi ces fiches sont rapprochées, en français. --text-3 sur --surface :
+   5,85:1 (valeur documentée dans index.css). */
+.doublon-raisons {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  font-size: var(--t-label);
+  line-height: var(--lh-text);
+  color: var(--text-3);
+}
+
+/* La confirmation vit DANS la carte du groupe, séparée par un filet plutôt que
+   par une seconde carte : une carte dans une carte brouillerait le rang des
+   deux — c'est la raison écrite en toutes lettres dans FicheApprenant.jsx, où
+   la confirmation est SŒUR de la carte et non son enfant. Ici elle ne peut pas
+   être sœur (elle appartient à un groupe parmi plusieurs), d'où le filet.
+   --line est purement décoratif, aucune exigence WCAG. */
+.notice-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--line);
 }
 
 .welcome-title {

@@ -71,6 +71,8 @@ db.exec(`
 
 const { nameKey } = require('./name-key');
 const { newId } = require('./ids');
+const { fusionnerSuggestions } = require('./suggestion');
+const { groupesProbables } = require('./similarite');
 
 // Interpolé dans le PRAGMA plus bas : PRAGMA n'accepte aucun paramètre lié.
 // Ce n'est pas une injection, c'est un littéral du code — jamais une saisie.
@@ -317,6 +319,29 @@ const stmt = {
     LIMIT @limit
   `),
 
+  // Correspondance en MILIEU de nom : « Kouassi Aya » doit sortir sur « aya ».
+  // C'était le trou le plus fréquent de la saisie assistée — un apprenant connu
+  // par son patronyme ne se retrouvait pas et ouvrait une seconde fiche.
+  //
+  // Le motif « * aya* » a un joker EN TÊTE : SQLite ne peut pas utiliser
+  // idx_learners_key et balaie la table. Assumé — quelques centaines de fiches
+  // tiennent en trois pages déjà en cache, et le LIMIT arrête le balayage à la
+  // cinquième correspondance. À revoir au-delà de ~20 000 fiches, pas avant.
+  //
+  // L'espace du motif est SIGNIFIANT : il veut dire « un mot qui commence par
+  // la saisie, et qui n'est pas le premier ». motsDeCle() applique la même
+  // règle côté db-memory.js.
+  //
+  // NOT GLOB @debut écarte ce que la requête ci-dessus a déjà rendu : une clé
+  // comme « aya kouassi aya » correspond aux deux motifs. Les deux listes
+  // arrivent donc disjointes à fusionnerSuggestions().
+  suggestLearnersMot: db.prepare(`
+    SELECT display_name FROM learners
+    WHERE suggestible = 1 AND name_key GLOB @motif AND name_key NOT GLOB @debut
+    ORDER BY name_key
+    LIMIT @limit
+  `),
+
   // Le filtre de dates est dans le ON, JAMAIS dans le WHERE. Dans le WHERE il
   // annulerait la jointure externe et ferait DISPARAÎTRE de la liste tout
   // apprenant sans participation sur la période — le formateur croirait ses
@@ -361,6 +386,22 @@ const stmt = {
     'SELECT * FROM results WHERE quiz_id = ? AND learner_id = ? ORDER BY id LIMIT 1'
   ),
   moveResults: db.prepare('UPDATE results SET learner_id = @intoId WHERE learner_id = @sourceId'),
+
+  // Toutes les fiches, avec de quoi les départager. AUCUN filtre de période :
+  // cet écran parle d'IDENTITÉ, pas de résultats — le piège du filtre de dates
+  // dans le ON plutôt que dans le WHERE ne se pose donc pas ici, et c'est
+  // précisément pour cela qu'il faut le dire.
+  // Les fiches en quarantaine sont INCLUSES : une fiche d'import est justement
+  // celle qu'un doublon récent vient concurrencer.
+  listDuplicateCandidates: db.prepare(`
+    SELECT l.id, l.display_name, l.name_key, l.created_by, l.suggestible,
+           COUNT(r.id) AS attempts,
+           MAX(r.submitted_at) AS last_submitted_at
+      FROM learners l
+      LEFT JOIN results r ON r.learner_id = l.id
+     GROUP BY l.id
+     ORDER BY l.name_key
+  `),
 };
 
 // Champs modifiables par PATCH /api/quiz/:id, chacun vers sa colonne.
@@ -468,7 +509,9 @@ function addResult(quizId, result) {
 // -----------------------------------------------------------------------------
 
 /**
- * Les prénoms qui commencent par `prefixKey`, et eux seuls.
+ * Les apprenants dont UN MOT du nom commence par `prefixKey`.
+ * « Kouassi Aya » sort désormais sur « aya », ce qui n'était pas le cas.
+ *
  * Renvoie les displayName, jamais les identifiants : la suggestion sert à
  * reconnaître son propre nom, pas à parcourir l'annuaire.
  */
@@ -483,9 +526,17 @@ function suggestLearners(prefixKey, limit = 8) {
   const n = Math.floor(Number(limit));
   const borne = Number.isFinite(n) && n > 0 ? n : 8;
 
-  return stmt.suggestLearners
+  // Chaque famille est bornée à `borne` AVANT la fusion, et non à sa part du
+  // quota : sans correspondance en milieu de nom, les préfixes doivent pouvoir
+  // reprendre toutes les places.
+  const prefixes = stmt.suggestLearners
     .all({ pattern: `${prefixe}*`, limit: borne })
     .map((row) => row.display_name);
+  const mots = stmt.suggestLearnersMot
+    .all({ motif: `* ${prefixe}*`, debut: `${prefixe}*`, limit: borne })
+    .map((row) => row.display_name);
+
+  return fusionnerSuggestions(prefixes, mots, borne);
 }
 
 /** La fiche correspondant à ce nom, à la casse et aux accents près, ou null. */
@@ -680,6 +731,25 @@ function mergeLearners(sourceId, intoId) {
   }
 }
 
+/**
+ * Les groupes de fiches qui désignent PROBABLEMENT la même personne.
+ * Ne modifie rien : c'est le formateur qui tranche, et mergeLearners qui
+ * exécute. Voir server/src/similarite.js pour les trois règles.
+ */
+function listDuplicateCandidates() {
+  return groupesProbables(
+    stmt.listDuplicateCandidates.all().map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      nameKey: row.name_key,
+      createdBy: row.created_by,
+      suggestible: Boolean(row.suggestible),
+      attempts: row.attempts ?? 0,
+      lastSubmittedAt: row.last_submitted_at ?? null,
+    }))
+  );
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -704,4 +774,8 @@ module.exports = {
   listLearnerHistory,
   findResultByLearner,
   mergeLearners,
+  // 22e fonction. Ajoutée AU MÊME RANG dans db-memory.js, dans le même commit :
+  // en mode dégradé, `store.listDuplicateCandidates` absent donnerait un 500
+  // que messagePourFormateur filtrerait en message générique — une panne muette.
+  listDuplicateCandidates,
 };

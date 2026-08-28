@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 
 import { adminFetchOuReseau, messageErreur } from '../api';
+import { useFocusAuMontage } from '../ecran';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -19,6 +20,9 @@ function ReviewQuestions({
   title,
   questions,
   dropped = 0,
+  brouillonRepris = false,
+  nonEnregistre = false,
+  onBrouillon,
   onPublish,
   publishing,
   publishError,
@@ -43,12 +47,21 @@ function ReviewQuestions({
   // titre principal à son montage. L'écran précédent (progression de la
   // génération, ou partage) est démonté avec l'élément qui avait le focus :
   // sans cette reprise, le focus retombe sur <body> et la tabulation repart du
-  // haut du document. Aucun risque de vol de focus au premier rendu de
-  // l'application : AdminPage démarre toujours à l'étape « upload », cet écran
-  // n'est donc jamais le tout premier monté.
+  // haut du document.
+  //
+  // ⚠️ La prémisse d'origine — « AdminPage démarre toujours à l'étape upload,
+  // cet écran n'est donc jamais le tout premier monté » — EST TOMBÉE avec les
+  // vraies adresses : /formateur/quiz/:id/questions se recharge au F5. D'où la
+  // garde partagée, qui ne prend le focus que sur un changement d'écran.
+  useFocusAuMontage(headingRef);
+
+  // Les corrections tapées à la main ne partent au serveur qu'au clic sur
+  // « Publier ». On les remonte à chaque changement pour que l'écran parent
+  // puisse les mettre de côté : sans cela un rafraîchissement les perdrait EN
+  // SILENCE, sur un écran visuellement identique.
   useEffect(() => {
-    headingRef.current?.focus();
-  }, []);
+    onBrouillon?.(items);
+  }, [items, onBrouillon]);
 
   // Aucun message n'est jamais rendu dans le commit qui monte sa région : il est
   // recopié ici, au commit suivant. Une région live qui naît AVEC son texte
@@ -150,6 +163,22 @@ function ReviewQuestions({
             {dropped} question{dropped > 1 ? 's' : ''} écartée{dropped > 1 ? 's' : ''} à la
             génération (réponse manquante ou options incomplètes). Utilisez la régénération si vous
             en voulez davantage.
+          </span>
+        </p>
+      )}
+
+      {/* Le quiz est DÉJÀ en ligne : ce qui n'est pas enregistré, ce sont les
+          corrections tapées à la main. Le dire est le prix des adresses — sur
+          l'ancienne machine à états, un F5 renvoyait à l'écran de création et
+          la perte se voyait ; ici l'écran revient à l'identique. */}
+      {nonEnregistre && (
+        <p className="notice" style={{ marginBottom: 'var(--s-5)' }}>
+          <Icon name="info" size={15} width={1.8} />
+          <span>
+            {brouillonRepris
+              ? 'Vos corrections précédentes ont été retrouvées, mais elles ne sont pas encore enregistrées.'
+              : 'Vos modifications ne sont pas encore enregistrées.'}{' '}
+            Cliquez sur <b>Publier le quiz</b> pour que les apprenants les voient.
           </span>
         </p>
       )}

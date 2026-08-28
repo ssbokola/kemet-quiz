@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import Icon from './Icon';
-import { adminFetchOuReseau, messageErreur, MESSAGE_RESEAU } from '../api';
+import { MESSAGE_RESEAU } from '../api';
+import { chargerResultats } from '../quiz-api';
+import { chemins } from '../chemins';
+import { useFocusAuMontage, useTitreDocument } from '../ecran';
 
 // Aucune erreur. Partagé par les deux états pour qu'ils démarrent sur la MÊME
 // référence, comme dans UploadPDF : la recopie du montage ne change alors rien.
@@ -25,24 +29,24 @@ function formatDate(iso) {
   });
 }
 
-function etatDuQuiz(q) {
-  if (q.closed) return 'fermé';
-  if (q.expiresAt && new Date(q.expiresAt) < new Date()) return 'expiré';
-  return 'en ligne';
-}
-
 /**
- * Écran « Résultats » — espace formateur uniquement.
+ * Écran « Résultats » d'UN quiz — espace formateur uniquement.
  *
  * Les scores étaient enregistrés depuis toujours, mais aucun écran ne les
  * affichait : la route /api/quiz/:id/results existait sans appelant. Cet écran
  * la branche enfin.
  *
+ * Il ne liste plus les quiz : cette moitié-là est partie dans MesQuiz, à sa
+ * propre adresse. C'est aussi ce que réclamait le commentaire d'en-tête
+ * d'Apprenants.jsx, qui désigne nommément l'ancien QuizResults comme le défaut
+ * à ne pas reproduire — liste et détail dans un même composant, donc un clic
+ * qui démonte le bouton focalisé sans rien remonter, et le focus sur <body>.
+ *
  * On dit « apprenant » et non « stagiaire » : la même officine forme des
  * stagiaires, des auxiliaires embauchés et parfois des pharmaciens.
  */
-function QuizResults({ onBack, quizIdInitial = null }) {
-  const [liste, setListe] = useState(null);
+function QuizResults() {
+  const { id } = useParams();
   const [stockage, setStockage] = useState(null);
   const [detail, setDetail] = useState(null);
   const [chargement, setChargement] = useState(true);
@@ -56,10 +60,13 @@ function QuizResults({ onBack, quizIdInitial = null }) {
   const signaler = (texte) => setErreur((prec) => ({ texte, n: prec.n + 1 }));
 
   // Convention de l'application : chaque écran reprend le focus sur son propre
-  // titre au montage. L'écran précédent est démonté avec l'élément focalisé.
-  useEffect(() => {
-    titreRef.current?.focus();
-  }, []);
+  // titre au montage — SAUF au chargement du document. Depuis que cet écran a
+  // une adresse, il peut être le tout premier monté (F5, favori, lien collé) :
+  // prendre le focus alors serait le voler.
+  useFocusAuMontage(titreRef);
+  // Deux onglets ouverts sur les résultats de deux quiz différents seraient
+  // sinon indiscernables dans la barre d'onglets.
+  useTitreDocument(detail?.title);
 
   // Aucun message n'est rendu dans le commit qui monte sa région : une région
   // live qui naît AVEC son texte n'est pas annoncée de façon fiable.
@@ -67,56 +74,24 @@ function QuizResults({ onBack, quizIdInitial = null }) {
     setAnnoncee(erreur);
   }, [erreur]);
 
-  const chargerDetail = async (quizId) => {
-    setDetail(null);
-    setChargement(true);
-    signaler('');
-    setAnnonce('');
-    try {
-      const res = await adminFetchOuReseau(`/api/quiz/${quizId}/results`);
-      if (!res.ok) {
-        throw new Error(await messageErreur(res, 'Les résultats n’ont pas pu être chargés.'));
-      }
-      const data = await res.json().catch(() => null);
-      if (!data || !Array.isArray(data.results)) {
-        throw new Error('Le serveur a renvoyé une réponse inattendue.');
-      }
-      setDetail(data);
-      if (data.stockage) setStockage(data.stockage);
-      const n = data.results.length;
-      setAnnonce(
-        n === 0
-          ? 'Aucune réponse pour ce quiz.'
-          : `${n} réponse${n > 1 ? 's' : ''} affichée${n > 1 ? 's' : ''}.`
-      );
-    } catch (err) {
-      signaler(err?.message || MESSAGE_RESEAU);
-    } finally {
-      setChargement(false);
-    }
-  };
-
   useEffect(() => {
     let annule = false;
+    setChargement(true);
     (async () => {
-      setChargement(true);
       try {
-        const res = await adminFetchOuReseau('/api/quizzes');
-        if (!res.ok) {
-          throw new Error(await messageErreur(res, 'La liste des quiz n’a pas pu être chargée.'));
-        }
-        const data = await res.json().catch(() => null);
+        const data = await chargerResultats(id);
         if (annule) return;
-        if (!data || !Array.isArray(data.quizzes)) {
+        if (!Array.isArray(data.results)) {
           throw new Error('Le serveur a renvoyé une réponse inattendue.');
         }
-        setListe(data.quizzes);
-        setStockage(data.stockage || null);
-        // Arrivée depuis l'écran de partage : on ouvre directement ce quiz-là.
-        if (quizIdInitial) {
-          await chargerDetail(quizIdInitial);
-          return;
-        }
+        setDetail(data);
+        if (data.stockage) setStockage(data.stockage);
+        const n = data.results.length;
+        setAnnonce(
+          n === 0
+            ? 'Aucune réponse pour ce quiz.'
+            : `${n} réponse${n > 1 ? 's' : ''} affichée${n > 1 ? 's' : ''}.`
+        );
       } catch (err) {
         if (!annule) signaler(err?.message || MESSAGE_RESEAU);
       } finally {
@@ -126,14 +101,7 @@ function QuizResults({ onBack, quizIdInitial = null }) {
     return () => {
       annule = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const revenirALaListe = () => {
-    setDetail(null);
-    signaler('');
-    setAnnonce('');
-  };
+  }, [id]);
 
   // Export tableur. Le point-virgule est le séparateur attendu par Excel en
   // configuration française ; le BOM lui fait lire l'UTF-8 sans quoi les accents
@@ -184,11 +152,7 @@ function QuizResults({ onBack, quizIdInitial = null }) {
         <h1 ref={titreRef} tabIndex={-1}>
           {detail ? detail.title : 'Résultats'}
         </h1>
-        <p>
-          {detail
-            ? 'Les scores de vos apprenants pour ce quiz.'
-            : 'Choisissez un quiz pour voir qui y a répondu.'}
-        </p>
+        <p>Les scores de vos apprenants pour ce quiz.</p>
       </div>
 
       {/* Une région d'alerte, montée en permanence, remplie au commit suivant. */}
@@ -223,34 +187,6 @@ function QuizResults({ onBack, quizIdInitial = null }) {
         <div className="loading-screen">
           <span className="spinner" aria-hidden="true" />
           <span>Chargement…</span>
-        </div>
-      )}
-
-      {!chargement && !detail && liste && liste.length === 0 && (
-        <div className="empty-state">
-          <span className="empty-state-icon" aria-hidden="true">
-            <Icon name="doc" size={22} width={1.6} />
-          </span>
-          <h2>Aucun quiz pour l’instant</h2>
-          <p>Créez un quiz et partagez-le : les scores de vos apprenants apparaîtront ici.</p>
-        </div>
-      )}
-
-      {!chargement && !detail && liste && liste.length > 0 && (
-        <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
-          {liste.map((q) => (
-            <button key={q.id} type="button" className="recent-row" onClick={() => chargerDetail(q.id)}>
-              <span className="recent-row-body">
-                <span className="recent-row-title">{q.title}</span>
-                <span className="recent-row-meta">
-                  {formatDate(q.createdAt)} · {etatDuQuiz(q)}
-                </span>
-              </span>
-              <span className="tag">
-                {q.resultCount} réponse{q.resultCount > 1 ? 's' : ''}
-              </span>
-            </button>
-          ))}
         </div>
       )}
 
@@ -293,10 +229,17 @@ function QuizResults({ onBack, quizIdInitial = null }) {
           )}
 
           <div className="split-actions">
-            <button type="button" className="btn btn--ghost" onClick={revenirALaListe}>
+            <Link className="btn btn--ghost" to={chemins.mesQuiz}>
               <Icon name="arrowLeft" size={16} width={1.7} />
-              Tous les quiz
-            </button>
+              Mes quiz
+            </Link>
+            {/* Referme la boucle : depuis les scores, on repart diffuser. La
+                flèche circulaire (`refresh`) est réservée à « régénérer /
+                refaire » — le partage utilise `send`. */}
+            <Link className="btn btn--ghost" to={chemins.partage(id)}>
+              <Icon name="send" size={16} width={1.7} />
+              Partager ce quiz
+            </Link>
             {detail.results.length > 0 && (
               <button type="button" className="btn btn--ghost" onClick={exporter}>
                 <Icon name="download" size={16} width={1.7} />
@@ -307,11 +250,14 @@ function QuizResults({ onBack, quizIdInitial = null }) {
         </>
       )}
 
-      {!detail && !chargement && (
-        <button type="button" className="btn btn--ghost btn--block" onClick={onBack}>
-          <Icon name="arrowLeft" size={16} width={1.7} />
-          Retour
-        </button>
+      {/* Le quiz existe mais n'a pas pu être chargé : on garde une sortie. */}
+      {!chargement && !detail && (
+        <div className="split-actions">
+          <Link className="btn btn--ghost" to={chemins.mesQuiz}>
+            <Icon name="arrowLeft" size={16} width={1.7} />
+            Mes quiz
+          </Link>
+        </div>
       )}
     </div>
   );

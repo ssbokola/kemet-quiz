@@ -43,7 +43,7 @@ function texteEvaluations(n) {
  * d'une classe déjà auditée (.recent-row, .tag, .notice, .error-msg…), les
  * ratios de contraste restent donc ceux d'App.css.
  */
-function AnnuaireApprenants({ onOuvrirFiche, onRetour, messageEntrant = '' }) {
+function AnnuaireApprenants({ onOuvrirFiche, onDoublons, onRetour, messageEntrant = '' }) {
   const [liste, setListe] = useState(null);
   const [stockage, setStockage] = useState(null);
   const [chargement, setChargement] = useState(true);
@@ -191,9 +191,21 @@ function AnnuaireApprenants({ onOuvrirFiche, onRetour, messageEntrant = '' }) {
   return (
     <div className="stack">
       <div className="page-head">
-        <h1 ref={titreRef} tabIndex={-1}>
-          Gérer l’annuaire
-        </h1>
+        {/* Même motif que « Gérer l'annuaire » sur l'écran précédent : l'accès
+            secondaire s'aligne sur la ligne de base du titre, discrètement.
+            Icône `search` et non `refresh` — la flèche circulaire est réservée
+            à « régénérer / refaire ». */}
+        <div className="field-row">
+          <h1 ref={titreRef} tabIndex={-1}>
+            Gérer l’annuaire
+          </h1>
+          {onDoublons && (
+            <button type="button" className="app-bar-link" onClick={onDoublons}>
+              <Icon name="search" size={15} width={1.7} />
+              Doublons probables
+            </button>
+          )}
+        </div>
         <p>
           Corrigez un nom mal saisi, réunissez deux fiches qui désignent la même personne.
           Ouvrez une fiche pour la modifier.

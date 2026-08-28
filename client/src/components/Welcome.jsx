@@ -50,7 +50,14 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
   const [suggestions, setSuggestions] = useState([]);
   // Vrai dès que l'apprenant a retenu un nom proposé. C'est ce drapeau, et non
   // la seule égalité des chaînes, qui décide si l'on demande confirmation.
-  const [choisi, setChoisi] = useState(false);
+  //
+  // Il FIGE aussi le champ (readOnly), et c'est le cœur de la prévention des
+  // doublons : sans cela, retenir une suggestion ne faisait que recopier son
+  // texte, et un seul caractère retouché derrière rouvrait une fiche neuve.
+  // Le verrou reste un confort d'interface, jamais une garantie : la route de
+  // suggestion ne rend que des chaînes (contrat de confidentialité), le submit
+  // envoie donc du texte libre et le serveur reste seul juge, via nameKey().
+  const [verrouille, setVerrouille] = useState(false);
   const [confirmation, setConfirmation] = useState(false);
   const [erreur, setErreur] = useState(AUCUNE_ERREUR);
   const [annoncee, setAnnoncee] = useState(AUCUNE_ERREUR);
@@ -79,7 +86,7 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
   // périmée afficherait les noms d'un préfixe déjà dépassé.
   useEffect(() => {
     const saisie = name.trim();
-    if (!quizId || saisie.length < MIN_CARACTERES || choisi) {
+    if (!quizId || saisie.length < MIN_CARACTERES || verrouille) {
       setSuggestions([]);
       return undefined;
     }
@@ -110,11 +117,22 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
       perime = true;
       clearTimeout(minuteur);
     };
-  }, [name, quizId, choisi]);
+  }, [name, quizId, verrouille]);
 
   // L'annonce polie suit la liste, jamais le rendu : une région live s'écrit
   // depuis un effet.
+  //
+  // Le verrou est testé EN PREMIER : retenir un nom vide la liste, donc les
+  // deux mises à jour d'état arrivent dans le même commit et l'effet ne voit
+  // plus qu'une liste vide. Sans cette branche, l'annonce du verrouillage
+  // serait immédiatement écrasée par la remise à zéro.
   useEffect(() => {
+    if (verrouille) {
+      setAnnonce(
+        `Nom retenu : ${name.trim()}. Le champ est figé ; bouton « Ce n’est pas moi » pour le corriger.`
+      );
+      return;
+    }
     if (suggestions.length === 0) {
       setAnnonce('');
       return;
@@ -124,15 +142,27 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
         ? '1 nom proposé. Flèche bas pour l’atteindre.'
         : `${suggestions.length} noms proposés. Flèche bas pour les atteindre.`
     );
-  }, [suggestions]);
+  }, [suggestions, verrouille, name]);
 
   const retenir = (nom) => {
     setName(nom);
-    setChoisi(true);
+    setVerrouille(true);
     setSuggestions([]);
     setConfirmation(false);
     signaler('');
     champRef.current?.focus();
+  };
+
+  // Se dédire. On GARDE le texte et on le sélectionne plutôt que de vider le
+  // champ : la première frappe le remplace, et l'apprenant qui s'est trompé de
+  // voisin n'a pas à tout retaper. focus() et select() fonctionnent sur un
+  // champ encore readOnly — l'attribut ne tombera qu'au rendu suivant.
+  const defaire = () => {
+    setVerrouille(false);
+    setConfirmation(false);
+    signaler('');
+    champRef.current?.focus();
+    champRef.current?.select();
   };
 
   // Navigation au focus RÉEL entre les noms proposés, sur le modèle de
@@ -191,7 +221,11 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
     // réellement des doublons : des noms sont proposés et aucun n'a été retenu.
     // Sans correspondance, il n'y a aucune ambiguïté à lever et une
     // confirmation ne serait que de la friction sur un parcours qui marche.
-    if (suggestions.length > 0 && !choisi) {
+    //
+    // `!verrouille` est redondant depuis que retenir() vide la liste — on le
+    // garde parce qu'il dit la règle, et qu'un futur ajout de suggestion en
+    // état verrouillé ne doit pas rouvrir cette porte en silence.
+    if (suggestions.length > 0 && !verrouille) {
       setConfirmation(true);
       return;
     }
@@ -227,14 +261,19 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
             id="player-name"
             ref={champRef}
             type="text"
-            className="input"
+            className={verrouille ? 'input input--retenu' : 'input'}
             placeholder="Ex. Aya Koffi"
             value={name}
+            // readOnly, JAMAIS disabled : `disabled` sortirait le champ de
+            // l'ordre de tabulation et de l'annonce du lecteur d'écran, alors
+            // que retenir() lui rend justement le focus.
+            readOnly={verrouille}
             onChange={(e) => {
               setName(e.target.value);
               // Toute frappe annule le choix : le nom retenu n'est plus celui
-              // qui est dans le champ.
-              setChoisi(false);
+              // qui est dans le champ. Inatteignable tant que le champ est
+              // figé — on le garde comme second garde-fou.
+              setVerrouille(false);
               setConfirmation(false);
             }}
             onKeyDown={toucheDansLeChamp}
@@ -243,6 +282,26 @@ function Welcome({ quizTitle, questionCount, singleAttempt = true, quizId, onSub
             // s'ouvrirait PAR-DESSUS nos suggestions.
             autoComplete="off"
           />
+
+          {/* Le nom retenu est figé, et il faut que ça se VOIE : un champ
+              readOnly sans marque ne se distingue d'un champ ordinaire qu'au
+              moment où l'on essaie d'y taper.
+              Ce bloc est dans le flux, contrairement à la liste : il fait une
+              ligne, largement sous les ~190 px que .welcome laisse libres, donc
+              `space-between` garde « Commencer » collé en bas — zéro pixel de
+              déplacement. Il ne coexiste jamais avec .suggestions : retenir()
+              vide la liste et l'effet la laisse vide tant que le verrou tient. */}
+          {verrouille && (
+            <div className="nom-retenu">
+              <span className="nom-retenu-etat">
+                <Icon name="check" size={15} width={2.4} />
+                Nom retenu
+              </span>
+              <button type="button" className="nom-retenu-defaire" onClick={defaire}>
+                Ce n’est pas moi
+              </button>
+            </div>
+          )}
 
           {/* Hors du flux (voir App.css) : .welcome est en space-between avec un
               min-height, et une liste en flux ferait remonter le bouton

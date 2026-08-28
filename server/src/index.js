@@ -785,6 +785,24 @@ function resumeDesEvaluations(evaluations) {
   return { attempts, avgPercent: comptees > 0 ? somme / comptees : null };
 }
 
+/**
+ * Les groupes de fiches qui désignent probablement la même personne.
+ *
+ * ⚠️ DÉCLARÉE AVANT `/api/learners/:id/history` et les autres routes à
+ * paramètre : « doublons » est un segment LITTÉRAL, et un `:id` déclaré plus
+ * haut le capterait. Elle est aussi, comme toutes les routes d'API, déclarée
+ * avant le repli SPA — sinon elle renverrait index.html avec un 200, res.ok
+ * vaudrait true côté client, et l'écran afficherait « réponse inattendue »
+ * pendant qu'on chercherait une panne serveur qui n'existe pas.
+ *
+ * Lecture seule, et c'est le point : elle PROPOSE. La fusion reste un geste du
+ * formateur, par POST /api/learners/:id/merge, parce qu'elle est irréversible
+ * et non reconstructible.
+ */
+app.get('/api/learners/doublons', requireAnnuaire, requireAdmin, (req, res) => {
+  res.json({ groupes: store.listDuplicateCandidates(), stockage: etatStockage() });
+});
+
 // L'annuaire, avec la synthèse de chacun sur la période demandée.
 app.get('/api/learners', requireAnnuaire, requireAdmin, (req, res) => {
   const periode = parsePeriode(req.query);
