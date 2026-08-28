@@ -4,3 +4,9 @@ dist/
 test.pdf
 .claude/settings.local.json
 data/
+
+# Matériel de travail UX/UI, non versionné : ces dossiers sont des sources
+# d'inspiration et des jetons de design déjà repris dans client/src/index.css.
+design-systems/
+taste/
+tokens/
