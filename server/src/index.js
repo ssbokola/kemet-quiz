@@ -699,11 +699,21 @@ function consommerJeton(ip) {
   return true;
 }
 
-// Liste blanche appliquée à la clé de nom, pas à la saisie brute. Ce n'est PAS
-// un confort de validation : c'est la condition de sûreté du GLOB employé par
-// le store, qui n'a pas de clause ESCAPE. Un « * » tapé dans le champ
-// deviendrait un joker et retournerait l'annuaire entier.
-const CLE_SUGGESTION = /^[a-z][a-z '-]*$/;
+// Liste blanche appliquée à la clé de nom, pas à la saisie brute.
+//
+// Elle N'EST PLUS le rempart unique : depuis la réécriture de nameKey(), les
+// métacaractères GLOB (* ? [ ]) sont hors de \p{L} ∪ \p{N} ∪ \p{M} et deviennent
+// des espaces à la construction de la clé. Une clé ne PEUT plus en contenir,
+// quelle que soit la saisie — la sûreté du GLOB sans clause ESCAPE est désormais
+// structurelle, et cette liste n'est qu'une seconde ceinture.
+//
+// L'apostrophe et le trait d'union ont quitté la liste parce qu'ils ont quitté
+// les CLÉS : nameKey supprime les premières et balaie les seconds. Les garder
+// aurait laissé croire qu'une clé peut encore en contenir.
+// Les chiffres et les lettres non latines restent refusés, exactement comme
+// avant : une fiche « Aya Koffi 2 » ou « علي » existe, s'ouvre et compte ses
+// évaluations — elle n'est simplement pas suggérée.
+const CLE_SUGGESTION = /^[a-z][a-z ]*$/;
 
 // Trois caractères minimum. À deux, les ~676 bigrammes couvrent tout l'espace
 // alphabétique : quelques centaines de requêtes suffiraient à reconstituer

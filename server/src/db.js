@@ -78,6 +78,17 @@ const { groupesProbables } = require('./similarite');
 // Ce n'est pas une injection, c'est un littéral du code — jamais une saisie.
 const RESULTS_TABLE = 'results';
 
+// Version des DONNÉES, pas du schéma. 1 (ou 0) : clés de nom d'origine.
+// 2 : clés renormalisées par la nouvelle nameKey().
+//
+// PRAGMA user_version plutôt qu'une table `schema_meta` : zéro octet de schéma
+// (c'est un entier de l'en-tête, page 1), transactionnel — il repart au
+// ROLLBACK — et parfaitement ignoré par une version antérieure de
+// l'application. Le mécanisme existant (PRAGMA table_info) ne sait détecter
+// qu'un changement de STRUCTURE ; il est aveugle à une migration de données
+// déjà jouée. Interpolé pour la même raison que RESULTS_TABLE.
+const VERSION_DONNEES = 2;
+
 /**
  * Migration du schéma — le point dur.
  *
@@ -135,9 +146,148 @@ function migrate() {
       'CREATE INDEX IF NOT EXISTS idx_results_learner_date ON results(learner_id, submitted_at)'
     );
 
+    // AVANT backfillLearners, et ce n'est pas indifférent : le backfill
+    // regroupe les participations orphelines PAR player_key et fabrique une
+    // fiche par groupe. Renormaliser d'abord lui fait produire directement les
+    // bonnes fiches, au lieu d'en créer d'anciennes à fusionner ensuite.
+    migrerClesDeNom();
+
     backfillLearners();
   } catch (err) {
     err.code = 'MIGRATION_FAILED';
+    throw err;
+  }
+}
+
+/**
+ * Renormalisation des clés de nom — la migration la plus délicate du dépôt.
+ *
+ * nameKey() a changé : elle écrase les espaces internes multiples, transforme
+ * les traits d'union et la ponctuation en espaces, supprime les apostrophes.
+ * Les valeurs déjà stockées dans results.player_key et learners.name_key ne
+ * correspondent donc plus à ce qu'elle renvoie. Sans cette reprise :
+ *   · la règle de tentative unique casserait EN SILENCE sur tout l'historique ;
+ *   · ensureLearner() ne retrouverait plus les fiches existantes et créerait
+ *     des doublons — exactement la maladie que ce lot soigne.
+ *
+ * ⛔ NE PAS RENDRE CET ÉCHEC NON FATAL. La tentation est réelle : « la
+ * réécriture est cosmétique, un ROLLBACK laisse l'application debout, mieux
+ * vaut un annuaire imparfait qu'un site à terre ». C'est faux ici, et
+ * dangereusement. Le code et les données sont livrés ENSEMBLE : après un
+ * ROLLBACK, la base porte des clés d'ancien format pendant que le code en
+ * calcule de nouveau format. Le serveur tournerait en cassant la tentative
+ * unique et en fabriquant des doublons à chaque envoi, sans un mot. Mourir est
+ * ici le comportement sûr — l'erreur remonte à migrate(), qui la marque
+ * MIGRATION_FAILED, et index.js relance au lieu de basculer en mémoire.
+ *
+ * Sûre à interrompre : tout tient dans UNE transaction, marqueur compris.
+ * Idempotente par CONSTRUCTION et pas seulement par le marqueur : la clé est
+ * toujours recalculée depuis player_name / display_name — jamais dérivée de la
+ * clé stockée — et nameKey(nameKey(x)) === nameKey(x).
+ *
+ * ⚠️ mergeLearners() n'est PAS appelée ici, et ne PEUT pas l'être : elle ouvre
+ * sa propre transaction (SQLite n'en imbrique pas) et surtout elle lit `stmt`,
+ * un const initialisé APRÈS l'appel de migrate() — la lire ici lèverait dans sa
+ * zone morte temporelle. Toutes les requêtes sont donc préparées LOCALEMENT,
+ * comme le fait déjà backfillLearners().
+ */
+function migrerClesDeNom() {
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  if (version >= VERSION_DONNEES) return;
+
+  // Préparées localement : `stmt` n'existe pas encore à cet instant.
+  const lireResultats = db.prepare('SELECT id, player_name, player_key FROM results');
+  const ecrireCleResultat = db.prepare('UPDATE results SET player_key = @cle WHERE id = @id');
+  const lireFiches = db.prepare(`
+    SELECT l.id, l.display_name, l.name_key,
+           (SELECT COUNT(*) FROM results r WHERE r.learner_id = l.id) AS attempts
+      FROM learners l
+     ORDER BY l.name_key
+  `);
+  const ecrireCleFiche = db.prepare('UPDATE learners SET name_key = @cle WHERE id = @id');
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // ---- A. results.player_key : réécriture INTÉGRALE.
+    // Aucune contrainte d'unicité sur cette colonne (idx_results_name est un
+    // index simple) : rien ne peut entrer en collision, c'est un gain net.
+    let resultatsReecrits = 0;
+    for (const r of lireResultats.all()) {
+      const cle = nameKey(r.player_name);
+      if (cle === r.player_key) continue;
+      ecrireCleResultat.run({ cle, id: r.id });
+      resultatsReecrits += 1;
+    }
+
+    // ---- B. learners.name_key : réécriture LÀ OÙ LA CLÉ EST LIBRE.
+    //
+    // idx_learners_key est UNIQUE : les fiches que la nouvelle règle réunit
+    // sont précisément celles qui violeraient la contrainte. On ne les fusionne
+    // PAS — mergeLearners déplace puis supprime SANS conserver la provenance,
+    // une fusion à tort ne se défait pas, même la sauvegarde en main. Elles
+    // gardent leur ancienne clé et l'écran « Doublons probables » les montre au
+    // formateur, qui tranche.
+    const fiches = lireFiches.all().map((l) => ({
+      id: l.id,
+      displayName: l.display_name,
+      ancienne: l.name_key,
+      cible: nameKey(l.display_name),
+      attempts: l.attempts || 0,
+    }));
+
+    // Qui obtient chaque clé cible. Départage : la fiche qui la porte DÉJÀ
+    // (elle n'a rien à faire), puis le plus d'évaluations, puis la graphie la
+    // plus propre, puis la plus longue. Déterministe.
+    const sale = (f) => (/\s{2,}|^\s|\s$/.test(String(f.displayName)) ? 1 : 0);
+    const parCible = new Map();
+    for (const f of fiches) {
+      if (!parCible.has(f.cible)) parCible.set(f.cible, []);
+      parCible.get(f.cible).push(f);
+    }
+
+    const gagnantes = new Set();
+    const perdantes = [];
+    for (const [cible, groupe] of parCible) {
+      if (!cible) continue; // clé vide : on n'y touche pas.
+      const classees = [...groupe].sort(
+        (a, b) =>
+          (a.ancienne === cible ? 0 : 1) - (b.ancienne === cible ? 0 : 1) ||
+          b.attempts - a.attempts ||
+          sale(a) - sale(b) ||
+          String(b.displayName).length - String(a.displayName).length ||
+          String(a.id).localeCompare(String(b.id))
+      );
+      gagnantes.add(classees[0].id);
+      for (const f of classees.slice(1)) perdantes.push(f);
+    }
+
+    // Deux passes, et c'est indispensable : réécrire dans l'ordre buterait sur
+    // l'index UNIQUE dès qu'une fiche prend la clé qu'une autre n'a pas encore
+    // libérée. On vide d'abord vers une clé temporaire unique par construction
+    // (l'identifiant), puis on pose les clés définitives.
+    const aDeplacer = fiches.filter((f) => f.cible && gagnantes.has(f.id) && f.ancienne !== f.cible);
+    for (const f of aDeplacer) {
+      ecrireCleFiche.run({ cle: ` migration-${f.id}`, id: f.id });
+    }
+    for (const f of aDeplacer) {
+      ecrireCleFiche.run({ cle: f.cible, id: f.id });
+    }
+
+    db.exec(`PRAGMA user_version = ${VERSION_DONNEES}`);
+    // Le marqueur est posé DANS la transaction : une coupure avant le COMMIT
+    // annule tout, marqueur compris, et le démarrage suivant recommence.
+    db.exec('COMMIT');
+
+    console.log(
+      `Clés de nom renormalisées : ${resultatsReecrits} participation(s), ` +
+        `${aDeplacer.length} fiche(s) réécrite(s), ${perdantes.length} fiche(s) laissée(s) ` +
+        `en l'état (doublons à trancher depuis l'écran « Doublons probables »).`
+    );
+    for (const f of perdantes) {
+      console.log(`  doublon révélé : « ${f.displayName} » rejoint « ${f.cible} »`);
+    }
+  } catch (err) {
+    db.exec('ROLLBACK');
     throw err;
   }
 }
