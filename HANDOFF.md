@@ -1,9 +1,10 @@
 # Kemet Quiz — Handoff technique
 
-**Dernière mise à jour :** 26 août 2026
+**Dernière mise à jour :** 28 août 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit :** `24d8c62` — *Saisie assistée du nom sur l'accueil de l'apprenant*
+**Dernier commit :** `1a3b69e` — *Mettre le handoff à jour, et cadrer le prochain chantier*
+**Non commité au 28/08 :** quatre lots — prévention des doublons, « Mes quiz » et adresses, doublons probables, renormalisation des clés de nom. Voir §12.
 
 ---
 
@@ -50,8 +51,14 @@ kemet-quizz/
 │       ├── main.jsx          point d'entrée React (createRoot, StrictMode)
 │       ├── index.css         reset + design tokens + polices
 │       ├── App.css           toute la feuille de style
-│       ├── App.jsx           routes
+│       ├── App.jsx           routes + mise en page formateur + AdminGate
 │       ├── api.js            fetch, messages d'erreur véridiques, auth formateur
+│       ├── quiz-api.js       les 4 appels « quiz » du formateur, phrases de repli comprises
+│       ├── chemins.js        les adresses de l'espace formateur, en un seul endroit
+│       ├── ecran.js          focus au montage (gardé) + titre de l'onglet
+│       ├── quiz-etat.js      en ligne / fermé / expiré, dit d'un seul endroit
+│       ├── diffusion.js      les durées de validité du lien
+│       ├── nom.js            la phrase qui décrit une fusion
 │       ├── dates.js          formatage français des dates et des périodes
 │       ├── components/
 │       │   ├── AdminGate.jsx        porte d'accès mot de passe
@@ -67,11 +74,15 @@ kemet-quizz/
 │       │   ├── PeriodePicker.jsx    sélecteur de période (deux dates)
 │       │   ├── AnnuaireApprenants.jsx   formateur : entretien de l'annuaire
 │       │   ├── FicheApprenant.jsx   formateur : renommer, (dé)suggérer, fusionner
-│       │   ├── Welcome.jsx          accueil apprenant + saisie assistée du nom
+│       │   ├── DoublonsProbables.jsx formateur : groupes de fiches à réunir
+│       │   ├── Welcome.jsx          accueil apprenant + saisie assistée + nom figé
 │       │   ├── Quiz.jsx             passation, thème encre
 │       │   └── Results.jsx          score, correction, export PDF
 │       ├── pages/
-│       │   ├── AdminPage.jsx        upload → review → share (+ results, apprenants)
+│       │   ├── CreationQuiz.jsx     dépôt du PDF (enveloppe de UploadPDF)
+│       │   ├── MesQuiz.jsx          la liste des quiz, avec recherche
+│       │   ├── PartageQuiz.jsx      QR, lien, WhatsApp, remise en ligne
+│       │   ├── RelectureQuiz.jsx    relecture + brouillon local des corrections
 │       │   └── QuizPage.jsx         welcome → quiz → results
 │       └── assets/           hero.png, react.svg, vite.svg — AUCUN n'est référencé
 └── server/
@@ -81,7 +92,14 @@ kemet-quizz/
         ├── db-memory.js      même interface, en mémoire — repli si db.js échoue
         ├── ids.js            newId() — identifiants de fiche, partagé par les deux stores
         ├── periode.js        jours calendaires → instants UTC (la logique la plus piégeuse)
-        └── name-key.js       normalisation des noms, partagée par les deux stores
+        ├── name-key.js       normalisation des noms — décide de l'IDENTITÉ
+        ├── suggestion.js     fusion des deux familles de correspondance, quota compris
+        └── similarite.js     rapprochement de fiches — PROPOSE, ne décide jamais
+    scripts/
+        └── migration-inverse.js  outil d'urgence, jamais lancé automatiquement
+    test/
+        ├── name-key.test.js  table de vérité de nameKey (les deux moitiés)
+        └── parite.test.js    les deux stores exposent et rendent la même chose
 ```
 
 ---
@@ -132,6 +150,7 @@ kemet-quizz/
 | `POST /api/learners` | ✅ | Le formateur crée une fiche. `409` avec la fiche existante en cas de doublon |
 | `PATCH /api/learners/:id` | ✅ | `{ displayName?, suggestible? }`. Ne touche à aucune ligne de `results` |
 | `POST /api/learners/:id/merge` | ✅ | `{ intoId }` — déplace les évaluations puis supprime la fiche source |
+| `GET /api/learners/doublons` | ✅ | Groupes de fiches désignant probablement la même personne. **Lecture seule : elle propose, le formateur tranche.** ⚠️ Déclarée AVANT `/api/learners/:id/history` — « doublons » est un segment littéral qu'un `:id` capterait |
 | `GET /api/learners/suggest` | — | **Publique.** `?q=&quizId=` → `{ suggestions: [...] }`, un tableau de **chaînes seules** — ni id, ni date, ni compteur |
 | `GET /api/quiz/:id` | — | Quiz **sans** les réponses. `410` si fermé ou expiré |
 | `POST /api/quiz/:id/submit` | — | Corrige et enregistre. `400` si `nameKey()` du nom est vide (espaces ou ponctuation seuls — garde-fou contre une fiche à `name_key` vide qui adopterait toutes les saisies vides), `409` si tentative unique déjà utilisée, `410` si fermé |
@@ -198,6 +217,25 @@ Depuis l'annuaire d'apprenants, `server/src/db.js` porte une fonction `migrate()
 | `ALTER TABLE … ADD COLUMN` | ✅ | ✅ (purement métadonnée, O(1)) |
 
 **Toute nouvelle colonne passe donc par `ALTER TABLE` dans `migrate()`**, avec détection par `PRAGMA table_info`.
+
+#### `migrerClesDeNom()` — la migration de DONNÉES du 28/08/2026
+
+`nameKey()` a été réécrite ; les clés déjà stockées ne correspondaient plus. La reprise vit dans `migrate()`, **entre `CREATE INDEX idx_results_learner_date` et `backfillLearners()`** — et cet ordre compte : le backfill regroupe les orphelins par `player_key`, renormaliser d'abord lui fait produire directement les bonnes fiches.
+
+| Point | Choix, et pourquoi |
+| --- | --- |
+| Marqueur | **`PRAGMA user_version`** (0 → 2). Zéro octet de schéma, **transactionnel** — vérifié sur Node 22.23.2 : il repart au `ROLLBACK`. `PRAGMA table_info` ne sait détecter qu'un changement de STRUCTURE, il est aveugle à une migration de données déjà jouée. |
+| `results.player_key` | Réécriture **intégrale**. Aucune contrainte d'unicité sur cette colonne : rien ne peut entrer en collision. |
+| `learners.name_key` | Réécriture **là où la clé cible est libre**, en deux passes par clé temporaire — réécrire dans l'ordre buterait sur l'index UNIQUE dès qu'une fiche prend une clé qu'une autre n'a pas encore libérée. |
+| Les collisions | **NE SONT PAS FUSIONNÉES.** Elles gardent leur ancienne clé et sont journalisées au démarrage ; l'écran « Doublons probables » les montre, le formateur tranche. `mergeLearners` supprime la source **sans conserver la provenance** : une fusion à tort ne se défait pas, même la sauvegarde en main. |
+| Idempotence | Par **construction**, pas seulement par le marqueur : la clé est toujours recalculée depuis `player_name`/`display_name`, jamais dérivée de la clé stockée, et `nameKey(nameKey(x)) === nameKey(x)`. |
+| Durée | Une transaction, un `fsync`. Sur la base de production (13 quiz, 10 participations, 10 fiches) : imperceptible. |
+
+⛔ **NE PAS RENDRE CET ÉCHEC NON FATAL.** La tentation est réelle et documentée dans le code : « la réécriture est cosmétique, un ROLLBACK laisse l'application debout ». C'est **faux**, et dangereusement : le code et les données sont livrés ensemble, donc après un ROLLBACK la base porte des clés d'ancien format pendant que le code en calcule de nouveau format. Le serveur tournerait en cassant la tentative unique et en fabriquant des doublons à chaque envoi, sans un mot. Mourir est ici le comportement sûr.
+
+⚠️ **`mergeLearners()` est inappelable depuis `migrate()`** : elle ouvre sa propre transaction (SQLite n'en imbrique pas) et surtout elle lit `stmt`, un `const` initialisé **après** l'appel de `migrate()` — la lire lèverait dans sa zone morte temporelle. Toutes les requêtes de la migration sont préparées **localement**, comme le fait déjà `backfillLearners`.
+
+**Éprouvé le 28/08/2026 sur une COPIE de la base de production**, prise à chaud par `VACUUM INTO` : 3 participations et 3 fiches réécrites, 1 collision laissée en l'état et journalisée, `integrity_check` ok, aucun résultat perdu, aucun orphelin créé, et **second passage strictement no-op**. Aller-retour avec `migration-inverse.js` : clés **identiques à l'original**.
 
 Un échec de migration marque `err.code = 'MIGRATION_FAILED'` et relance. `index.js` **doit** relancer sur ce code au lieu de basculer sur `db-memory` : sans cette discrimination, une migration ratée ne tue pas le serveur, elle fait **perdre silencieusement la persistance** en production, avec pour seule trace deux lignes de console.
 
@@ -290,7 +328,17 @@ Le logo Kemet est vert, l'interface est or — choix assumé et validé : le ver
 
 ### Version de Node
 
-`engines.node` vaut `>=22.13.0` et un `.nvmrc` fige le majeur sur `22`. Ce n'est pas cosmétique : en dessous de 22.13, `node:sqlite` n'existe pas et l'application démarrerait en mode dégradé sans persistance. Railway tourne actuellement sur `node@22.23.1`.
+`engines.node` vaut `>=22.13.0` et un `.nvmrc` fige le majeur sur `22`. Ce n'est pas cosmétique : en dessous de 22.13, `node:sqlite` n'existe pas et l'application démarrerait en mode dégradé sans persistance. Railway tourne actuellement sur **`node@22.23.2`** (relevé le 28/08/2026 dans les logs de build ; le poste de développement est en `24.14.0`).
+
+**Pour vérifier sur le vrai Node de Railway sans l'installer**, le canal SSH suffit :
+
+```bash
+railway ssh node --version
+railway volume files --volume quiz-data upload <script-local> /sonde.js
+railway ssh node /data/sonde.js
+```
+
+⚠️ Sous Git Bash, poser `MSYS_NO_PATHCONV=1` avant toute commande `railway` qui prend un chemin distant : sans cela `/sonde.js` est réécrit en `C:/Program Files/Git/sonde.js`. Et le quoting ne survit pas à `railway ssh node -e "…"` : passer par un fichier téléversé.
 
 Le `.env` local est dans `.gitignore`.
 
@@ -330,9 +378,21 @@ C'est la limitation la plus importante aujourd'hui, et le prochain chantier (§1
 
 Conséquence pédagogique : impossible de répondre à « quelle question est ratée par tout le monde ? », qui est probablement la question la plus utile qu'un formateur puisse poser à cet outil.
 
+### La suggestion trouve désormais N'IMPORTE QUEL mot du nom
+
+« Kouassi Aya » sort sur « aya », ce qui n'était pas le cas : la requête ne portait que sur le **début** de la clé, et c'est la cause de doublon la plus fréquente observée en production. Deux requêtes préparées (`suggestLearners`, `suggestLearnersMot`), fusionnées par `server/src/suggestion.js` — module partagé, pour que les deux stores ne puissent pas diverger.
+
+**Le quota de 3 places pour les correspondances en tête de nom n'est pas décoratif** : sans lui, cinq fiches en « Aya… » satureraient les cinq places et « Kouassi Aya » ne sortirait jamais sur « aya » — la fonctionnalité s'annulerait dans le cas précis qui la motive.
+
+Le motif à joker initial (`'* aya*'`) **n'utilise aucun index** et balaie la table. Assumé : quelques centaines de fiches tiennent en trois pages déjà en cache, et le `LIMIT` arrête au cinquième. **À revoir au-delà de ~20 000 fiches, pas avant.**
+
 ### La suggestion publique est énumérable
 
 Qui détient un lien de quiz **ouvert** peut parcourir l'espace des préfixes de 3 lettres — quelques milliers de requêtes — et reconstituer l'essentiel de l'annuaire. La limitation de débit renchérit l'attaque, elle ne l'empêche pas. Les seuls remèdes réels seraient d'authentifier l'apprenant, ou de ne pas avoir d'annuaire.
+
+**La suggestion par mot élargit la surface, et il faut le dire :** le **coût d'un sondage exhaustif est inchangé** — c'est le nombre de requêtes qui le fixe, pas leur rendement, et un sondage exhaustif récupérait déjà tout. Ce qui change, c'est le rendement d'un sondage **partiel** : il double environ, une fiche étant désormais atteignable par son prénom **ou** son patronyme (~2 mots par fiche). La normalisation des traits d'union y ajoute un peu.
+
+Levier disponible si l'on veut compenser : porter le minimum de la seule famille « milieu de nom » à 4 caractères. **Non retenu** — l'exemple canonique du chantier (« aya ») fait trois lettres.
 
 Évolution qui le réglerait : rattacher l'annuaire à une **promotion** et ne suggérer que parmi les apprenants de la session du quiz. La surface passerait de « tout l'annuaire » à « une classe ».
 
@@ -340,15 +400,39 @@ Qui détient un lien de quiz **ouvert** peut parcourir l'espace des préfixes de
 
 Une fiche « Kouassi Aya » ne sortira jamais sur « aya ». Le formateur doit tenir une convention de saisie stable — prénom d'abord ou nom d'abord, mais toujours la même. À dire à l'utilisateur, ce n'est pas devinable.
 
-### ⚠️ `nameKey()` ne normalise ni les espaces internes ni les traits d'union
+### ✅ `nameKey()` normalise désormais espaces, traits d'union et apostrophes — corrigé le 28/08/2026
 
-« Aya  Koffi » (double espace) et « Aya Koffi » sont deux personnes, avec deux fiches, deux historiques et deux tentatives uniques. « Marie-Claire » ≠ « Marie Claire ».
+« Aya  Koffi » = « Aya Koffi », « Marie-Claire » = « Marie Claire », « N'Guessan » = « Nguessan » (toutes graphies d'apostrophe comprises). La migration `migrerClesDeNom()` a réécrit `results.player_key` et `learners.name_key` en conséquence — voir §5.
 
-**Ne PAS corriger `server/src/name-key.js` sans migration dédiée.** Les `results.player_key` déjà stockés cesseraient de correspondre à ce que la fonction renvoie : la règle de tentative unique casserait en silence sur tout l'historique, et le regroupement du backfill divergerait de la résolution. C'est un chantier à part, avec sa propre réécriture de `player_key`.
+**Ce qui reste vrai et ne doit pas être oublié :** toute nouvelle modification de `server/src/name-key.js` exige sa propre migration, dans le même commit. La livrer seule casserait la tentative unique en silence sur tout l'historique.
 
-### Aucun test automatisé
+**Ce qui n'est volontairement PAS fusionné :** l'ordre des mots (« Yao Koffi » ≠ « Koffi Yao » — noms de jour akan), les chiffres (« Aya Koffi 2 »), une lettre de différence. Le rapprochement de ces cas-là vit dans `server/src/similarite.js`, qui **propose** au formateur, et jamais dans `nameKey()`, qui **tranche**. La recherche et l'identité ne partagent jamais la même fonction.
 
-Ni script `test`, ni répertoire de tests. Toute la vérification est manuelle. C'est le point faible de fond du projet.
+### Le retour arrière applicatif est devenu DÉGRADANT — et il ne l'était pas
+
+La promesse d'origine — « une base migrée reste lisible par l'ancienne version applicative » — tient encore sur le schéma, qui est inchangé : l'ancienne version démarre, lit tout, **ne perd aucune donnée**. Ce qui ne tient plus, c'est la sémantique : elle recalculerait des clés d'ancien format sur une base de nouveau format.
+
+**Mesuré sur la base de production du 28/08/2026 : 3 noms sur 8** verraient la tentative unique devenir muette, et `ensureLearner` leur recréerait une fiche en double. En silence.
+
+Deux parades, dans cet ordre :
+
+1. **`server/scripts/migration-inverse.js`** — écrit en même temps que la migration directe, versionné, jamais exécuté automatiquement. Il remet les clés en ancien format et `user_version` à 1. Éprouvé en aller-retour sur une copie de production : les clés reviennent **identiques à l'original**, sans perte. Il est préférable à la restauration — il ne perd aucune participation postérieure à la sauvegarde. Lancer d'abord sans `--appliquer` (essai à blanc).
+2. La restauration de la sauvegarde binaire, qui perd tout ce qui est arrivé depuis.
+
+### Quelques tests automatisés, enfin — mais le minimum
+
+`npm test` (soit `node --test`) fait tourner `server/test/` : `node:test` + `node:assert`, **zéro dépendance ajoutée** — capital sur un projet qu'un binaire natif a déjà mis à terre.
+
+| Fichier | Ce qu'il ferme |
+| --- | --- |
+| `name-key.test.js` | La table de vérité de `nameKey`. **La moitié négative est la plus importante** : réunir deux graphies d'une personne se rattrape à la main, fusionner deux personnes ne se défait pas. Y figurent aussi l'impossibilité des métacaractères GLOB et l'idempotence, dont dépend la migration. |
+| `parite.test.js` | Les deux stores exposent les mêmes fonctions, dans le même ordre, et rendent la même chose sur la suggestion et les doublons. C'est le risque numéro un du dépôt : une fonction ajoutée d'un seul côté ne se voit qu'en mode dégradé, sous forme d'un 500 que le client traduit en message générique. |
+
+⚠️ Chaque test pose `process.env.DATA_DIR` sur un dossier temporaire **avant** le `require` : `db.js` crée son fichier de base au chargement du module, et sans cette ligne les tests écriraient dans `data/kemet-quiz.db`.
+
+Refusé délibérément, pour que ça ne devienne pas un chantier : pas de framework, pas de CI, pas de couverture, pas de tests de composants React (il faudrait jsdom + testing-library, donc une seconde pile à entretenir). **L'accessibilité de ce projet se vérifie au lecteur d'écran, pas par une assertion.**
+
+Restent à écrire quand l'occasion se présentera : un différentiel complet des 22 fonctions de store, un harnais de migration versionné, et un parcours HTTP de bout en bout.
 
 ### Divers
 
@@ -514,3 +598,82 @@ Et derrière, la question qu'un formateur d'officine veut vraiment poser : **que
 | Mode révision (réponse dévoilée à chaque question) | Usage entraînement | Faible |
 
 > Les chantiers « tableau de bord des résultats », « liste des quiz du formateur » et « export CSV » de la version précédente de ce document sont **faits** — voir §5 et §8.
+
+---
+
+## 12. Les quatre lots du 28 août 2026
+
+Livrés dans cet ordre, du moins risqué au plus risqué. **Non commités à la date de cette mise à jour.**
+
+### Lot 0 — Reconnaissance (aucun code)
+
+Premier acte, et il manquait : personne n'avait regardé ce que l'annuaire avait produit en production depuis son déploiement du 26/08.
+
+- Volume `quiz-data` bien monté sur `/data`, API confirmant `{"persistant":true}`.
+- **10 fiches pour 10 participations — dont 4 fiches pour UNE SEULE personne**, portant 5 des 10 évaluations : « Flore Sidonie », « Flore Sidonie  N'guessan » (double espace), « Flore Sidonie N'guessan », « Sidonie N'guessan flore » (ordre inversé). Le diagnostic du chantier, en vrai.
+- ⚠️ **Le `.db` fait 4 Ko, le `-wal` 824 Ko.** Copier le seul `.db` aurait donné une base **vide**. D'où `VACUUM INTO`, jamais `cp`.
+- Sauvegarde binaire prise, rapatriée et **vérifiée localement** : `data/prod-20260828-1420.db`, 217 Ko, `integrity_check: ok`. Une copie qu'on n'a pas ouverte n'est pas une sauvegarde.
+- Une sauvegarde logique JSON complète l'ensemble. `data/` est gitignoré — ces fichiers contiennent des noms d'apprenants et ne doivent jamais partir sur le dépôt public.
+
+### Lot 1 — Prévention des doublons
+
+**Le nom retenu se fige.** Cliquer une suggestion ne faisait que recopier son texte : un caractère retouché derrière rouvrait une fiche neuve. Le champ passe en `readOnly` — **jamais `disabled`**, qui le sortirait de la tabulation et de l'annonce alors que le focus lui est justement rendu — avec une sortie explicite « Ce n'est pas moi » à 44 px, qui conserve et **sélectionne** le texte.
+Mesuré : **0 px de déplacement du bouton « Commencer »** dans les trois états.
+Corrigé au passage : `.field:has(> .suggestions)` n'avait **aucun repli `@supports`** alors que le dépôt en pose deux ailleurs. Sur Firefox 101→120 et Safari < 15.4, la liste partait une hauteur de fenêtre plus bas.
+
+**La suggestion trouve n'importe quel mot du nom** (voir §8). Preuve sur les vraies données : taper « sidonie » — exactement ce qui s'est passé en production — ne proposait **rien** ; ça propose désormais « Flore Sidonie N'guessan ». Le doublon ne se serait pas créé.
+
+### Lot 2 — Retrouver et repartager un quiz
+
+`AdminPage.jsx` **supprimé**, éclaté en quatre pages sous de vraies adresses :
+
+```
+/                        → redirection vers /formateur
+/quiz/:id                → QuizPage                    ← GELÉ À VIE
+/formateur               → EspaceFormateur (AppBar + AdminGate + <Outlet/>)
+    index                → CreationQuiz
+    quiz                 → MesQuiz
+    quiz/:id             → PartageQuiz
+    quiz/:id/questions   → RelectureQuiz
+    quiz/:id/resultats   → QuizResults
+    apprenants           → Apprenants (aiguillage interne conservé)
+```
+
+**Aucune ligne de serveur touchée** : `express.static` puis le repli SPA servent déjà `index.html` sur `/formateur/**`. Vérifié en production locale sur les six adresses.
+
+⚠️ **Le piège invisible du lot : le vol de focus.** Six composants reprenaient le focus sur leur titre **sans condition** ; un seul avait une garde (`UploadPDF`), parce qu'il était le seul écran capable d'être le premier monté. Avec une adresse par écran, tous le deviennent. La garde est montée dans `client/src/ecran.js` et elle a gagné l'écoute de **`popstate`** : le bouton Précédent du navigateur ne produit ni `pointerdown` ni `keydown`, et sans cette ligne il changerait tout l'écran en laissant le focus sur `<body>`.
+Vérifié dans les deux sens : **BODY** au chargement direct, **H1** après un vrai clic.
+
+**Remise en ligne d'un quiz.** `PATCH { expiresInHours }` existait, aucune UI ne l'exposait — un quiz expiré ne pouvait pas être renvoyé. Un tiroir reprend le patron audité de « Diffusion du lien », avec un bouton **Appliquer** explicite : les flèches d'un `RadioGroup` déplacent focus ET sélection, appliquer au changement enverrait trois `PATCH` pour une traversée au clavier.
+Un quiz peut être **fermé ET expiré**, et lever un seul verrou ne suffit pas. Le badge suit la précédence du serveur, et c'est l'**annonce** qui dit ce qui manque encore — « Quiz réouvert, mais le lien reste expiré ». Cycle complet vérifié en rouvrant le lien apprenant à chaque étape : 410, 410, 410, puis 200.
+
+**Brouillon de relecture.** Le quiz est déjà en ligne quand la relecture s'affiche ; seules les corrections manuelles sont en mémoire. Sans filet, l'adresse aurait créé une régression que la machine à états n'avait pas : autrefois un F5 renvoyait à l'écran de création — la perte se **voyait**. On serait retombé sur le même écran, à l'identique, avec vingt corrections en moins. D'où `localStorage` par `quizId`, sur le précédent `kemet-quiz-progress-`.
+
+### Lot 3 — Doublons probables & recherche
+
+`server/src/similarite.js` — trois règles, une quatrième écartée :
+
+| Règle | Attrape |
+| --- | --- |
+| Mêmes mots, ordre différent | « Sidonie N'guessan flore » ↔ « Flore Sidonie N'guessan » |
+| Orthographe très proche | « Kouasi Aya » ↔ « Kouassi Aya » |
+| Nom incomplet (inclusion stricte) | « Flore Sidonie » ⊂ « Flore Sidonie N'guessan » |
+| ~~Un mot en commun~~ | **rejetée** — apparierait tous les Kouassi entre eux |
+
+**Deux resserrages imposés par les noms ivoiriens, trouvés en testant et non en théorie :**
+
+1. La comparaison d'orthographe portait d'abord sur la clé entière : « Kouassi Aya » et « Kouassi **Yao** » étaient rapprochés, car « aya » → « yao » ne coûte que deux opérations. Elle porte désormais **mot à mot** — l'écart tombe sur deux mots courts dont le seuil est 1, et le rapprochement disparaît. Les noms de jour akan sont courts et se ressemblent entre eux : c'est un piège structurel ici.
+2. Un nom d'**un seul mot** inclus dans plusieurs autres ne dit rien : « Kouassi » ne s'apparie plus avec tous les « Kouassi X ». Mais « Flore Sidonie », deux mots inclus dans trois variantes, reste rattaché — l'exclure sortirait du groupe la fiche portant le plus d'évaluations.
+
+**Des groupes, pas des paires** : les 4 fiches de production auraient donné 6 cartes pour une seule personne.
+**Le défaut de fiche à conserver ne suit PAS le nombre d'évaluations** — cela proposait de garder « Flore Sidonie » (2 évaluations) plutôt que « Flore Sidonie N'guessan » (1), c'est-à-dire de **perdre le patronyme**. La fusion rapatrie toutes les évaluations de toute façon : le seul enjeu du choix est le nom qui survit. Le classement va au nom le plus complet.
+
+⚠️ Après une fusion on **reste** sur l'écran, donc c'est le même type de composant à la même position : React ne le remonte pas, l'effet de focus ne rejoue pas et la liste reste périmée — le défaut exact que décrit l'en-tête d'`Apprenants.jsx`. Une `key` incrémentale force le remontage.
+
+**Recherche** dans l'annuaire et dans « Mes quiz » : filtre client sur la liste chargée, insensible à la casse et aux accents, cherchant **partout** dans le nom. Seuil de bascule vers un paramètre serveur à écrire ici quand on l'atteindra : ~2 000 apprenants, ~1 000 quiz.
+
+### Lot 4 — `nameKey()` et sa migration
+
+Voir §5 (la migration), §8 (le retour arrière et les tests). Ce lot est le seul à toucher aux données.
+
+**Ordre de déploiement recommandé :** lots 1 à 3 d'abord, ils ne touchent pas aux données et se vérifient seuls. Le lot 4 ensuite, **sauvegarde binaire vérifiée en main**, hors séance de formation, et en surveillant les logs de démarrage — la migration y journalise ce qu'elle a réécrit et les doublons qu'elle révèle.
