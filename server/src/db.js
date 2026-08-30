@@ -120,6 +120,50 @@ function migrate() {
       );
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_learners_key ON learners(name_key);
+
+      -- Le détail des réponses, question par question. Une TABLE et non une
+      -- colonne JSON sur results : la question la plus utile qu'un formateur
+      -- pose à cet outil est « quelle question est ratée par tout le monde ? »,
+      -- et c'est précisément celle qu'un JSON empêcherait d'agréger.
+      --
+      -- CREATE TABLE IF NOT EXISTS suffit ici, contrairement à une COLONNE
+      -- ajoutée : une table entièrement nouvelle est bien créée sur une base
+      -- existante. C'est l'ajout de colonne qui exige ALTER TABLE.
+      --
+      -- question_text est FIGÉ à l'instant de la réponse, comme player_name
+      -- l'est déjà : les questions restent modifiables après coup
+      -- (PATCH /api/quiz/:id), et une statistique portant sur un énoncé qui a
+      -- changé depuis ne voudrait rien dire.
+      --
+      -- quiz_id est porté ICI plutôt que lu par jointure sur results : il rend
+      -- l'agrégat « les plus ratées » lisible en un seul balayage d'index.
+      -- Dénormalisation assumée, et la CASCADE le tient à jour.
+      --
+      -- Les réponses circulent en LETTRES dans toute l'application ('A'..'F',
+      -- voir LETTERS dans index.js et Quiz.jsx), jamais en index numérique.
+      -- given est donc TEXT, et NULLABLE : une question laissée sans réponse
+      -- est une donnée, pas un trou. La distinguer d'une mauvaise réponse est
+      -- tout l'intérêt.
+      --
+      -- Les LIBELLÉS sont figés à côté des lettres, pour la même raison que
+      -- question_text : les options sont modifiables après coup elles aussi, et
+      -- une lettre seule ne dit plus rien si l'option a changé de texte ou de
+      -- rang. C'est ce qui permet de dire « Aya a répondu X, il fallait Y »
+      -- sans relire le quiz courant, donc sans risquer de le dire faux.
+      CREATE TABLE IF NOT EXISTS answers (
+        result_id      INTEGER NOT NULL REFERENCES results(id)  ON DELETE CASCADE,
+        quiz_id        TEXT    NOT NULL REFERENCES quizzes(id)  ON DELETE CASCADE,
+        question_index INTEGER NOT NULL,
+        question_text  TEXT    NOT NULL,
+        given          TEXT,
+        given_label    TEXT,
+        correct_answer TEXT    NOT NULL,
+        correct_label  TEXT    NOT NULL,
+        is_correct     INTEGER NOT NULL,
+        PRIMARY KEY (result_id, question_index)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_answers_quiz ON answers(quiz_id, question_index);
     `);
 
     const hasLearnerId = db
@@ -438,6 +482,44 @@ const stmt = {
     VALUES (@quizId, @playerName, @playerKey, @learnerId, @score, @total, @submittedAt)
   `),
 
+  insertAnswer: db.prepare(`
+    INSERT INTO answers
+      (result_id, quiz_id, question_index, question_text, given, given_label, correct_answer, correct_label, is_correct)
+    VALUES
+      (@resultId, @quizId, @questionIndex, @questionText, @given, @givenLabel, @correctAnswer, @correctLabel, @isCorrect)
+  `),
+
+  // L'agrégat qui répond à « quelle question est ratée par tout le monde ? ».
+  //
+  // GROUP BY sur le seul question_index, jamais sur le texte : un énoncé
+  // corrigé en cours de route scinderait sinon la question en deux lignes.
+  // L'énoncé affiché est celui de la participation la PLUS RÉCENTE, et
+  // formulations signale qu'il a changé — le formateur doit savoir que son
+  // pourcentage porte sur deux libellés.
+  statsParQuestion: db.prepare(`
+    SELECT a.question_index,
+           (SELECT a2.question_text
+              FROM answers a2
+             WHERE a2.quiz_id = a.quiz_id AND a2.question_index = a.question_index
+             ORDER BY a2.result_id DESC
+             LIMIT 1) AS question_text,
+           COUNT(*) AS reponses,
+           SUM(CASE WHEN a.is_correct = 0 THEN 1 ELSE 0 END) AS ratees,
+           SUM(CASE WHEN a.given IS NULL THEN 1 ELSE 0 END) AS sans_reponse,
+           COUNT(DISTINCT a.question_text) AS formulations
+      FROM answers a
+     WHERE a.quiz_id = @quizId
+     GROUP BY a.question_index
+     ORDER BY a.question_index
+  `),
+
+  listAnswersByResult: db.prepare(`
+    SELECT question_index, question_text, given, given_label, correct_answer, correct_label, is_correct
+      FROM answers
+     WHERE result_id = @resultId
+     ORDER BY question_index
+  `),
+
   // ---------------------------------------------------------------------------
   // Annuaire des apprenants
   // ---------------------------------------------------------------------------
@@ -633,20 +715,95 @@ function listResults(quizId) {
   return stmt.listResults.all(quizId).map(rowToResult);
 }
 
+/**
+ * Enregistre une participation, et le DÉTAIL de ses réponses s'il est fourni.
+ *
+ * `result.detail` : [{ questionIndex, questionText, given, correctIndex,
+ * isCorrect }]. Facultatif — une participation sans détail reste valide, c'est
+ * le cas de tout l'historique antérieur à cette table.
+ *
+ * Les deux écritures tiennent dans UNE transaction : une participation dont le
+ * détail manquerait à moitié produirait des statistiques fausses, et fausses en
+ * silence. Tout ou rien. C'est la seule transaction du chemin d'envoi, qui
+ * reste par ailleurs synchrone de bout en bout.
+ */
 function addResult(quizId, result) {
-  stmt.insertResult.run({
-    quizId,
-    playerName: result.playerName,
-    playerKey: nameKey(result.playerName),
-    // `?? null` explicite : node:sqlite lie SILENCIEUSEMENT à NULL un paramètre
-    // nommé absent de l'objet. Sans ce défaut écrit noir sur blanc, un jour où
-    // l'appelant oublierait learnerId, la participation partirait orpheline
-    // sans que rien ne proteste.
-    learnerId: result.learnerId ?? null,
-    score: result.score,
-    total: result.total,
-    submittedAt: result.submittedAt,
-  });
+  const detail = Array.isArray(result.detail) ? result.detail : [];
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const info = stmt.insertResult.run({
+      quizId,
+      playerName: result.playerName,
+      playerKey: nameKey(result.playerName),
+      // `?? null` explicite : node:sqlite lie SILENCIEUSEMENT à NULL un paramètre
+      // nommé absent de l'objet. Sans ce défaut écrit noir sur blanc, un jour où
+      // l'appelant oublierait learnerId, la participation partirait orpheline
+      // sans que rien ne proteste.
+      learnerId: result.learnerId ?? null,
+      score: result.score,
+      total: result.total,
+      submittedAt: result.submittedAt,
+    });
+
+    // lastInsertRowid peut sortir en BigInt selon le réglage du runtime, et
+    // results.id est un INTEGER AUTOINCREMENT : on repasse en Number avant de
+    // le relier, sinon la clé étrangère ne correspondrait pas au type attendu.
+    const resultId = Number(info.lastInsertRowid);
+
+    for (const r of detail) {
+      stmt.insertAnswer.run({
+        resultId,
+        quizId,
+        questionIndex: r.questionIndex,
+        questionText: r.questionText,
+        // Sans réponse : NULL. Une lettre vide ou un tiret se confondraient
+        // avec une option choisie au moment de compter.
+        given: r.given ?? null,
+        givenLabel: r.givenLabel ?? null,
+        correctAnswer: r.correctAnswer,
+        correctLabel: r.correctLabel,
+        isCorrect: r.isCorrect ? 1 : 0,
+      });
+    }
+
+    db.exec('COMMIT');
+    return { resultId };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+/**
+ * Pour un quiz, chaque question avec son taux d'échec. Trié par index de
+ * question ; c'est l'écran qui décide de reclasser par difficulté.
+ * Ne compte QUE les participations postérieures à la mise en place du détail.
+ */
+function listQuestionStats(quizId) {
+  return stmt.statsParQuestion.all({ quizId }).map((row) => ({
+    questionIndex: row.question_index,
+    questionText: row.question_text,
+    reponses: row.reponses,
+    ratees: row.ratees,
+    sansReponse: row.sans_reponse,
+    // Vrai quand l'énoncé a changé entre deux participations : le pourcentage
+    // porte alors sur deux formulations, et l'écran doit le dire.
+    enonceModifie: row.formulations > 1,
+  }));
+}
+
+/** Le détail d'UNE participation. Vide pour l'historique antérieur. */
+function listResultAnswers(resultId) {
+  return stmt.listAnswersByResult.all({ resultId: Number(resultId) }).map((row) => ({
+    questionIndex: row.question_index,
+    questionText: row.question_text,
+    given: row.given,
+    givenLabel: row.given_label,
+    correctAnswer: row.correct_answer,
+    correctLabel: row.correct_label,
+    isCorrect: Boolean(row.is_correct),
+  }));
 }
 
 // -----------------------------------------------------------------------------
@@ -928,4 +1085,7 @@ module.exports = {
   // en mode dégradé, `store.listDuplicateCandidates` absent donnerait un 500
   // que messagePourFormateur filtrerait en message générique — une panne muette.
   listDuplicateCandidates,
+  // 23e et 24e : le détail des réponses. Même règle, même rang.
+  listQuestionStats,
+  listResultAnswers,
 };

@@ -568,6 +568,38 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     };
   });
 
+  // Cette correction était calculée, envoyée à l'apprenant, puis JETÉE. Le
+  // formateur savait qu'Aya avait fait 3/5, jamais sur quoi elle s'était
+  // trompée — et ne pouvait donc pas répondre à la question la plus utile de
+  // cet outil : quelle question est ratée par tout le monde ?
+  // Rien n'est recalculé ici, on cesse simplement de jeter.
+  //
+  // L'énoncé est FIGÉ maintenant, comme playerName l'est déjà : les questions
+  // restent modifiables ensuite, et une statistique sur un énoncé qui a changé
+  // ne voudrait rien dire.
+  // ⚠️ Les réponses sont des LETTRES ('A'..'F'), pas des index — c'est ce que
+  // normalizeQuestions produit et ce que Quiz.jsx envoie. Les traiter comme des
+  // entiers viderait tout le détail en silence.
+  const libelle = (q, lettre) => {
+    const i = LETTERS.indexOf(lettre);
+    return i > -1 && q.options[i] !== undefined ? q.options[i] : null;
+  };
+  const detail = quiz.questions.map((q, i) => ({
+    questionIndex: i,
+    questionText: q.question,
+    // Une question sautée vaut null : « pas répondu » et « mauvaise réponse »
+    // sont deux informations différentes pour le formateur.
+    given: typeof answers[i] === 'string' && answers[i] ? answers[i] : null,
+    givenLabel: libelle(q, answers[i]),
+    correctAnswer: q.answer,
+    // correct_label est NOT NULL en base : on se replie sur la lettre plutôt
+    // que de faire échouer TOUT l'envoi si une option venait à manquer.
+    // normalizeQuestions garantit déjà que la lettre est dans les bornes, ce
+    // repli ne devrait jamais servir — c'est précisément pour ça qu'il est là.
+    correctLabel: libelle(q, q.answer) ?? q.answer,
+    isCorrect: answers[i] === q.answer,
+  }));
+
   // Seule porte de création d'une fiche côté apprenant, et par EFFET DE BORD de
   // l'envoi des réponses : il n'existe aucune route publique dédiée qu'un curieux
   // pourrait marteler pour peupler ou sonder l'annuaire. Une fiche déjà là est
@@ -580,6 +612,7 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     total: quiz.questions.length,
     submittedAt: new Date().toISOString(),
     learnerId: fiche.id,
+    detail,
   });
 
   console.log(`${nomSaisi} scored ${score}/${quiz.questions.length} on quiz ${req.params.id}`);
@@ -612,6 +645,42 @@ function etatStockage() {
 // apprenants par ricochet.
 app.get('/api/quizzes', requireAdmin, (req, res) => {
   res.json({ quizzes: store.listQuizzes(), stockage: etatStockage() });
+});
+
+/**
+ * Les questions d'un quiz, avec leur taux d'échec.
+ *
+ * ⚠️ Ne porte que sur les participations enregistrées DEPUIS la mise en place
+ * du détail : tout l'historique antérieur n'a que son score. `couvertes` dit
+ * combien de participations sont réellement comptées, pour que l'écran puisse
+ * l'annoncer au lieu d'afficher un vide qu'on prendrait pour une panne.
+ */
+app.get('/api/quiz/:id/stats', requireAdmin, (req, res) => {
+  const quiz = store.getQuiz(req.params.id);
+  if (!quiz) return res.status(404).json({ error: 'Quiz introuvable' });
+
+  const questions = store.listQuestionStats(req.params.id);
+  const total = store.countResults(req.params.id);
+  // Toutes les questions d'une même participation sont écrites ensemble : le
+  // maximum de `reponses` est donc le nombre de participations détaillées.
+  const couvertes = questions.reduce((m, q) => Math.max(m, q.reponses), 0);
+
+  res.json({
+    title: quiz.title,
+    questions,
+    participations: total,
+    couvertes,
+    // Les participations d'avant, dont le détail n'existe pas et n'existera
+    // jamais. L'écran doit le dire plutôt que de laisser croire à un oubli.
+    sansDetail: Math.max(0, total - couvertes),
+    stockage: etatStockage(),
+  });
+});
+
+/** Le détail d'UNE participation : ce que la personne a répondu, question par question. */
+app.get('/api/results/:resultId/answers', requireAdmin, (req, res) => {
+  const reponses = store.listResultAnswers(req.params.resultId);
+  res.json({ reponses, stockage: etatStockage() });
 });
 
 app.get('/api/quiz/:id/results', requireAdmin, (req, res) => {

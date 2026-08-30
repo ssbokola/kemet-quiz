@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Icon from './Icon';
 import { MESSAGE_RESEAU } from '../api';
-import { chargerResultats } from '../quiz-api';
+import { chargerResultats, chargerStats } from '../quiz-api';
 import { chemins } from '../chemins';
 import { useFocusAuMontage, useTitreDocument } from '../ecran';
 
@@ -49,6 +49,7 @@ function QuizResults() {
   const { id } = useParams();
   const [stockage, setStockage] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [stats, setStats] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState(AUCUNE_ERREUR);
   const [annoncee, setAnnoncee] = useState(AUCUNE_ERREUR);
@@ -79,8 +80,14 @@ function QuizResults() {
     setChargement(true);
     (async () => {
       try {
-        const data = await chargerResultats(id);
+        // Les deux en parallèle : l'agrégat des questions ne doit pas retarder
+        // l'affichage des scores, et son échec ne doit pas l'empêcher.
+        const [data, sts] = await Promise.all([
+          chargerResultats(id),
+          chargerStats(id).catch(() => null),
+        ]);
         if (annule) return;
+        setStats(sts);
         if (!Array.isArray(data.results)) {
           throw new Error('Le serveur a renvoyé une réponse inattendue.');
         }
@@ -225,6 +232,71 @@ function QuizResults() {
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* CE QU'IL FAUT REPRENDRE EN FORMATION.
+              La correction était calculée à chaque envoi puis jetée : on savait
+              qu'Aya avait fait 3/5, jamais sur quoi. C'est désormais conservé,
+              et c'est la question la plus utile qu'on puisse poser à cet outil.
+              Trié du plus raté au mieux réussi : le haut de la liste est
+              l'ordre du jour de la prochaine séance. */}
+          {stats && stats.couvertes > 0 && (
+            <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
+              <h2 className="eyebrow">Ce qu’il faut reprendre</h2>
+
+              {/* Les participations d'avant n'ont pas de détail et n'en auront
+                  jamais. Le dire, plutôt que d'afficher un compte qu'on
+                  croirait faux. */}
+              {stats.sansDetail > 0 && (
+                <p className="notice">
+                  <Icon name="info" size={15} width={1.8} />
+                  <span>
+                    Ces chiffres portent sur {stats.couvertes} participation
+                    {stats.couvertes > 1 ? 's' : ''} sur {stats.participations}. Le détail
+                    n’était pas conservé avant aujourd’hui : les {stats.sansDetail} plus
+                    anciennes ne comptent que leur score.
+                  </span>
+                </p>
+              )}
+
+              {[...stats.questions]
+                .sort(
+                  (a, b) =>
+                    b.ratees / (b.reponses || 1) - a.ratees / (a.reponses || 1) ||
+                    a.questionIndex - b.questionIndex
+                )
+                .map((q) => {
+                  const reussite = Math.round(((q.reponses - q.ratees) / (q.reponses || 1)) * 100);
+                  return (
+                    <div key={q.questionIndex} className="question-stat">
+                      <span className="question-stat-titre">
+                        <span className="tag">Q{q.questionIndex + 1}</span>
+                        {q.questionText}
+                      </span>
+                      {/* La barre montre la proportion qui a TROUVÉ : une barre
+                          courte saute aux yeux. Décorative — la phrase juste
+                          en dessous porte la même information en toutes
+                          lettres, et l'information ne passe donc jamais par la
+                          seule couleur. */}
+                      <span className="bar" aria-hidden="true">
+                        <span className="bar-fill" style={{ width: `${reussite}%` }} />
+                      </span>
+                      <span className="question-stat-meta">
+                        {/* Le verbe s'accorde AUSSI, pas seulement le
+                            participe : « 1 sur 3 se sont trompé » est fautif. */}
+                        {q.ratees === 0
+                          ? `Tout le monde a trouvé (${q.reponses} réponse${q.reponses > 1 ? 's' : ''}).`
+                          : q.ratees === 1
+                            ? `1 sur ${q.reponses} s’est trompé.`
+                            : `${q.ratees} sur ${q.reponses} se sont trompés.`}
+                        {q.sansReponse > 0 &&
+                          ` Dont ${q.sansReponse} sans réponse.`}
+                        {q.enonceModifie && ' L’énoncé a été modifié depuis certaines réponses.'}
+                      </span>
+                    </div>
+                  );
+                })}
             </div>
           )}
 

@@ -1086,6 +1086,39 @@ a.recent-row {
   margin-top: var(--s-3);
 }
 
+/* « Ce qu'il faut reprendre » : une question et son taux d'échec.
+   Géométrie de .recent-row (même fond, même contour, même rayon) mais en
+   COLONNE — la barre et sa phrase se lisent sous l'énoncé, pas à côté. Ce n'est
+   pas une ligne cliquable : ni cursor, ni survol. */
+.question-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-6) var(--s-7);
+  background: var(--surface);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-md);
+}
+
+/* Le numéro de question et l'énoncé sur la même ligne de base. align-items
+   flex-start et non center : sur un énoncé qui passe à la ligne, la pastille
+   doit rester en haut. */
+.question-stat-titre {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  font-size: var(--t-body);
+  line-height: var(--lh-text);
+  color: var(--text);
+}
+
+/* --text-3 sur --surface : 5,85:1 (valeur documentée dans index.css). */
+.question-stat-meta {
+  font-size: var(--t-label);
+  line-height: var(--lh-snug);
+  color: var(--text-3);
+}
+
 /* ---------- Écran 4 : relecture ---------- */
 .review-head {
   display: flex;
@@ -1677,6 +1710,83 @@ a.recent-row {
 .apprenant-ligne > .bar {
   grid-column: 1 / -1;
   grid-row: 2;
+}
+
+/* La ligne devient un <button> : il existe enfin quelque chose derrière une
+   évaluation — le détail de ses réponses. Une troisième colonne accueille le
+   chevron ; `grid-column: 1 / -1` de la barre la couvre déjà.
+   Un <button> ne réinitialise ni la police ni l'alignement du texte, d'où les
+   deux lignes qui suivent la grille. */
+.apprenant-ligne--depliable {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.apprenant-ligne--depliable > .apprenant-chevron {
+  grid-column: 3;
+  grid-row: 1;
+  color: var(--text-3);
+  transition: transform 0.18s;
+}
+
+/* Piloté par aria-expanded plutôt que par une classe : l'état est déjà porté
+   là pour les lecteurs d'écran, le dupliquer en classe le ferait dériver. */
+.apprenant-ligne--depliable[aria-expanded='true'] > .apprenant-chevron {
+  transform: rotate(180deg);
+}
+
+/* Le détail déplié, en retrait sous sa ligne. */
+.apprenant-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-5) var(--s-7) var(--s-6);
+}
+
+.reponse-ligne {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+}
+
+/* L'icône dit le verdict, et un texte .sr-only le dit AUSSI en toutes lettres :
+   jamais par la seule couleur (WCAG 1.4.1).
+   Le ton vient d'un MODIFICATEUR posé dans le JSX, pas d'un :has() sur le nom
+   de l'icône — Icon.jsx ne rend qu'une classe `icon` générique, une telle règle
+   serait morte sans que rien ne le signale.
+   --ok-text et --err-text sont les variantes sombres, faites pour porter du
+   texte : 6,68:1 pour la première sur --paper-3, largement au-dessus des 3:1
+   qu'exigerait une simple icône. */
+.reponse-verdict {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.reponse-verdict--juste {
+  color: var(--ok-text);
+}
+
+.reponse-verdict--faux {
+  color: var(--err-text);
+}
+
+.reponse-corps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.reponse-question {
+  font-size: var(--t-label);
+  line-height: var(--lh-text);
+  color: var(--text-2);
 }
 
 /* tabular-nums : à chasse proportionnelle, le « 1 » d'Instrument Sans est plus

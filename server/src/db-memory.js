@@ -159,10 +159,17 @@ function listResults(quizId) {
   return (results.get(quizId) || []).map(toResult);
 }
 
+/**
+ * Enregistre une participation et le détail de ses réponses.
+ * Même contrat que db.js : `result.detail` est facultatif, et rend { resultId }.
+ * Ici le détail vit sur l'entrée elle-même — pas de seconde table à tenir, donc
+ * pas de transaction : une affectation d'objet est atomique par construction.
+ */
 function addResult(quizId, result) {
   if (!results.has(quizId)) results.set(quizId, []);
+  const resultId = nextResultId++;
   results.get(quizId).push({
-    id: nextResultId++,
+    id: resultId,
     playerName: result.playerName,
     score: result.score,
     total: result.total,
@@ -170,7 +177,66 @@ function addResult(quizId, result) {
     // `?? null` explicite : une participation sans fiche reste possible, et
     // undefined dans une Map ne se distingue pas d'une clé absente.
     learnerId: result.learnerId ?? null,
+    detail: (Array.isArray(result.detail) ? result.detail : []).map((r) => ({
+      questionIndex: r.questionIndex,
+      questionText: r.questionText,
+      // Les réponses sont des LETTRES ('A'..'F'), jamais des index. NULL quand
+      // la question est restée sans réponse.
+      given: r.given ?? null,
+      givenLabel: r.givenLabel ?? null,
+      correctAnswer: r.correctAnswer,
+      correctLabel: r.correctLabel,
+      isCorrect: Boolean(r.isCorrect),
+    })),
   });
+  return { resultId };
+}
+
+/**
+ * Pour un quiz, chaque question avec son taux d'échec.
+ * Reproduit le GROUP BY question_index de db.js, y compris le choix de
+ * l'énoncé le plus RÉCENT et le signalement d'un énoncé modifié.
+ */
+function listQuestionStats(quizId) {
+  const parIndex = new Map();
+  for (const entry of results.get(quizId) || []) {
+    for (const r of entry.detail || []) {
+      if (!parIndex.has(r.questionIndex)) {
+        parIndex.set(r.questionIndex, { reponses: 0, ratees: 0, sansReponse: 0, textes: [] });
+      }
+      const acc = parIndex.get(r.questionIndex);
+      acc.reponses += 1;
+      if (!r.isCorrect) acc.ratees += 1;
+      if (r.given === null) acc.sansReponse += 1;
+      // Empilé dans l'ordre d'insertion : le dernier est le plus récent, comme
+      // le ORDER BY result_id DESC de db.js.
+      acc.textes.push({ id: entry.id, texte: r.questionText });
+    }
+  }
+  return [...parIndex.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([questionIndex, acc]) => {
+      const recent = [...acc.textes].sort((a, b) => b.id - a.id)[0];
+      return {
+        questionIndex,
+        questionText: recent ? recent.texte : '',
+        reponses: acc.reponses,
+        ratees: acc.ratees,
+        sansReponse: acc.sansReponse,
+        enonceModifie: new Set(acc.textes.map((t) => t.texte)).size > 1,
+      };
+    });
+}
+
+/** Le détail d'UNE participation. Vide pour l'historique antérieur. */
+function listResultAnswers(resultId) {
+  const cible = Number(resultId);
+  for (const { entry } of allEntries()) {
+    if (entry.id === cible) {
+      return [...(entry.detail || [])].sort((a, b) => a.questionIndex - b.questionIndex);
+    }
+  }
+  return [];
 }
 
 /* ------------------------------------------------------------------ *
@@ -507,4 +573,6 @@ module.exports = {
   // 22e fonction, au MÊME RANG que dans db.js. Le test de parité échoue si
   // l'une des deux listes bouge sans l'autre.
   listDuplicateCandidates,
+  listQuestionStats,
+  listResultAnswers,
 };

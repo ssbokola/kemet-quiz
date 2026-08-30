@@ -50,3 +50,17 @@ export function chargerResultats(id) {
     repli: 'Les résultats n’ont pas pu être chargés.',
   });
 }
+
+/** Les questions d'un quiz avec leur taux d'échec. */
+export function chargerStats(id) {
+  return adminJson(`/api/quiz/${id}/stats`, {
+    repli: 'Le détail des questions n’a pas pu être chargé.',
+  });
+}
+
+/** Le détail d'UNE participation : ce que la personne a répondu, question par question. */
+export function chargerReponses(resultId) {
+  return adminJson(`/api/results/${resultId}/answers`, {
+    repli: 'Le détail des réponses n’a pas pu être chargé.',
+  });
+}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import PeriodePicker from './PeriodePicker';
 import { adminFetchOuReseau, messageErreur, MESSAGE_RESEAU } from '../api';
+import { chargerReponses } from '../quiz-api';
 import { formatJourHeure, libellePeriode } from '../dates';
 
 // Aucune erreur. Partagée par les deux états pour qu'ils démarrent sur la MÊME
@@ -40,6 +41,11 @@ function ApprenantHistorique({ apprenant, onRetour }) {
   const [erreur, setErreur] = useState(AUCUNE_ERREUR);
   const [annoncee, setAnnoncee] = useState(AUCUNE_ERREUR);
   const [annonce, setAnnonce] = useState('');
+  // Le détail dépliable d'une évaluation : { [resultId]: 'chargement' | [] }.
+  // Chargé À LA DEMANDE — un historique de vingt évaluations ne doit pas tirer
+  // vingt requêtes pour un détail que le formateur ne regardera peut-être pas.
+  const [details, setDetails] = useState({});
+  const [ouverte, setOuverte] = useState(null);
   const titreRef = useRef(null);
 
   // Numéro de la demande en cours. Le sélecteur de période permet d'enchaîner
@@ -141,6 +147,33 @@ function ApprenantHistorique({ apprenant, onRetour }) {
   // lignes se terminent par \r\n. Le fichier porte EXACTEMENT ce qui est à
   // l'écran, période appliquée comprise : un formateur qui exporte après avoir
   // filtré s'attend au contenu filtré.
+  /**
+   * Déplie une évaluation, et charge son détail à la PREMIÈRE ouverture
+   * seulement — ensuite il est en mémoire, replier puis rouvrir ne coûte rien.
+   *
+   * Un échec ne remonte PAS dans la région d'alerte de l'écran : le formateur
+   * a demandé un complément, pas une opération. On déplie sur un détail vide,
+   * qui dit lui-même qu'il n'y a rien à montrer.
+   */
+  const basculerDetail = async (resultId) => {
+    if (ouverte === resultId) {
+      setOuverte(null);
+      return;
+    }
+    setOuverte(resultId);
+    if (details[resultId] !== undefined && details[resultId] !== 'chargement') return;
+    setDetails((prec) => ({ ...prec, [resultId]: 'chargement' }));
+    try {
+      const data = await chargerReponses(resultId);
+      setDetails((prec) => ({
+        ...prec,
+        [resultId]: Array.isArray(data.reponses) ? data.reponses : [],
+      }));
+    } catch {
+      setDetails((prec) => ({ ...prec, [resultId]: [] }));
+    }
+  };
+
   const exporter = () => {
     if (!historique || historique.evaluations.length === 0) return;
     const echappe = (v) => `"${String(v).replace(/"/g, '""')}"`;
@@ -311,30 +344,92 @@ function ApprenantHistorique({ apprenant, onRetour }) {
             <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
               {evaluations.map((ev, i) => {
                 const pourcent = Math.round(ev.percent);
+                const id = ev.resultId;
+                const estOuverte = ouverte === id;
+                const detail = details[id];
                 return (
-                  // Ligne NON cliquable : aucun écran n'existe derrière une
-                  // évaluation, et une ligne qui réagit au survol promettrait
-                  // une action inexistante.
-                  <div key={i} className="apprenant-ligne">
-                    <span className="recent-row-body">
-                      <span className="recent-row-title">{ev.quizTitle}</span>
-                      <span className="recent-row-meta">{formatJourHeure(ev.submittedAt)}</span>
-                    </span>
-                    {/* Barre DÉCORATIVE : elle ne dit rien que .apprenant-note
-                        ne dise déjà en toutes lettres, d'où aria-hidden — sans
-                        quoi le même score serait lu deux fois. Aucune couleur
-                        introduite ici : .bar-fill porte la sienne, documentée à
-                        3,46:1 contre la piste .bar (WCAG 1.4.11). */}
-                    <div className="bar" aria-hidden="true">
-                      {/* <div> et non <span>, comme l'unique autre emploi de
-                          .bar (UploadPDF) : .bar-fill se règle en height: 100 %,
-                          qui ne s'applique pas à une boîte inline — la barre
-                          resterait vide. */}
-                      <div className="bar-fill" style={{ width: `${pourcent}%` }} />
+                  <div key={i}>
+                    {/* La ligne est désormais CLIQUABLE : il existe enfin
+                        quelque chose derrière une évaluation — le détail des
+                        réponses, question par question. Elle ne l'était pas
+                        tant que ce détail était jeté. */}
+                    <button
+                      type="button"
+                      className="apprenant-ligne apprenant-ligne--depliable"
+                      aria-expanded={estOuverte}
+                      aria-controls={`detail-${id}`}
+                      onClick={() => basculerDetail(id)}
+                    >
+                      <span className="recent-row-body">
+                        <span className="recent-row-title">{ev.quizTitle}</span>
+                        <span className="recent-row-meta">{formatJourHeure(ev.submittedAt)}</span>
+                      </span>
+                      {/* Barre DÉCORATIVE : elle ne dit rien que .apprenant-note
+                          ne dise déjà en toutes lettres, d'où aria-hidden — sans
+                          quoi le même score serait lu deux fois. Aucune couleur
+                          introduite ici : .bar-fill porte la sienne, documentée à
+                          3,46:1 contre la piste .bar (WCAG 1.4.11). */}
+                      <span className="bar" aria-hidden="true">
+                        <span className="bar-fill" style={{ width: `${pourcent}%` }} />
+                      </span>
+                      <span className="apprenant-note">
+                        {ev.score} / {ev.total} · {pourcent} %
+                      </span>
+                      {/* Chevron PROPRE à cette ligne, et non .disclosure-chevron :
+                          celui-là se place en grid-column 2 / grid-row 1 span 2,
+                          ce qui le mettrait sur la note. */}
+                      <Icon name="chevronDown" size={16} className="apprenant-chevron" />
+                    </button>
+
+                    {/* Toujours rendu, seul `hidden` bascule : aria-controls doit
+                        désigner un élément existant dans les deux états. Même
+                        motif que le tiroir « Diffusion du lien ». */}
+                    <div id={`detail-${id}`} className="apprenant-detail" hidden={!estOuverte}>
+                      {detail === 'chargement' && (
+                        <p className="question-stat-meta">Chargement du détail…</p>
+                      )}
+                      {Array.isArray(detail) && detail.length === 0 && (
+                        <p className="question-stat-meta">
+                          Le détail n’a pas été conservé pour cette évaluation : elle est
+                          antérieure à la mise en place de cette fonction. Seul le score existe.
+                        </p>
+                      )}
+                      {Array.isArray(detail) &&
+                        detail.map((r) => (
+                          <div key={r.questionIndex} className="reponse-ligne">
+                            <span
+                              className={`reponse-verdict reponse-verdict--${
+                                r.isCorrect ? 'juste' : 'faux'
+                              }`}
+                            >
+                              <Icon
+                                name={r.isCorrect ? 'check' : 'close'}
+                                size={15}
+                                width={2.4}
+                              />
+                              {/* Le verdict est aussi ÉCRIT, pas seulement
+                                  porté par une icône et une couleur. */}
+                              <span className="sr-only">
+                                {r.isCorrect ? 'Juste :' : 'Faux :'}
+                              </span>
+                            </span>
+                            <span className="reponse-corps">
+                              <span className="reponse-question">
+                                Q{r.questionIndex + 1}. {r.questionText}
+                              </span>
+                              {!r.isCorrect && (
+                                <span className="question-stat-meta">
+                                  {r.given
+                                    ? `A répondu : ${r.givenLabel || r.given}`
+                                    : 'N’a pas répondu'}
+                                  {' — '}
+                                  attendu : {r.correctLabel || r.correctAnswer}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
                     </div>
-                    <span className="apprenant-note">
-                      {ev.score} / {ev.total} · {pourcent} %
-                    </span>
                   </div>
                 );
               })}
