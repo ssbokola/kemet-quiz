@@ -53,20 +53,28 @@ function decrireApprenant(apprenant) {
   const attempts = Number.isFinite(apprenant.attempts) ? apprenant.attempts : 0;
   const moyenne = moyenneArrondie(apprenant);
   const enQuarantaine = apprenant.suggestible === false;
+  // Officine ACTUELLE de la fiche (voir listLearners) — pas celle figée sur une
+  // participation passée. Absente tant que le formateur (ou l'apprenant, pour
+  // les prochaines fiches) ne l'a pas renseignée.
+  const officine = apprenant.pharmacyName ? String(apprenant.pharmacyName).trim() : '';
+  const sansOfficine = !officine;
 
   // Ligne de contexte. Sans participation, la date de dernière évaluation
   // n'existe pas : on donne celle de création de la fiche, qui est la seule
-  // information vraie dont on dispose.
+  // information vraie dont on dispose. L'officine, quand elle existe, s'ajoute
+  // en dernier : elle ne remplace jamais la date, elle la complète.
   const derniere = jour(apprenant.lastSubmittedAt);
   const creation = jour(apprenant.createdAt);
-  const meta =
+  const meta = [
     attempts === 0
       ? creation
         ? `Fiche créée le ${creation}`
         : 'Aucune participation enregistrée'
-      : [evaluations(attempts), derniere ? `dernière le ${derniere}` : '']
-          .filter(Boolean)
-          .join(' · ');
+      : [evaluations(attempts), derniere ? `dernière le ${derniere}` : ''].filter(Boolean).join(' · '),
+    officine,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   // Étiquette de droite. Trois cas distincts, jamais confondus : pas encore
   // d'évaluation, une moyenne, ou une moyenne que le serveur n'a pas donnée.
@@ -92,8 +100,9 @@ function decrireApprenant(apprenant) {
   if (attempts === 0 && creation) parties.push(`fiche créée le ${creation}`);
   if (attempts > 0 && derniere) parties.push(`dernière le ${derniere}`);
   if (enQuarantaine) parties.push('fiche non suggérée');
+  parties.push(officine ? `officine ${officine}` : 'sans officine');
 
-  return { initiale, meta, tag, enQuarantaine, aria: parties.join(', ') };
+  return { initiale, meta, tag, enQuarantaine, sansOfficine, aria: parties.join(', ') };
 }
 
 /**
@@ -195,7 +204,9 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
   // La comparaison ignore la casse et les accents, comme nameKey côté serveur,
   // SANS en dépendre : ceci filtre un affichage, cela décide d'une identité.
   // Et elle cherche partout dans le nom, pas seulement au début : « kone »
-  // doit trouver « Bintou Kone ».
+  // doit trouver « Bintou Kone ». Étendue à l'officine pour la même raison qui
+  // a fait naître cet écran : retrouver vite qui appeler, y compris en tapant
+  // le nom d'une pharmacie plutôt qu'une personne.
   const sansAccent = (s) =>
     String(s || '')
       .normalize('NFD')
@@ -204,7 +215,12 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
   const q = sansAccent(recherche.trim());
   // NE PAS retrier : le serveur rend déjà la liste triée, et retrier ici ferait
   // diverger cet écran de tous les autres.
-  const filtree = liste && q ? liste.filter((a) => sansAccent(a.displayName).includes(q)) : liste;
+  const filtree =
+    liste && q
+      ? liste.filter(
+          (a) => sansAccent(a.displayName).includes(q) || sansAccent(a.pharmacyName).includes(q)
+        )
+      : liste;
   const filtreActif = Boolean(q);
 
   const sousTitre =
@@ -299,7 +315,7 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
             id="recherche-apprenant"
             type="search"
             className="input"
-            placeholder="Prénom ou nom"
+            placeholder="Prénom, nom ou officine"
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
             autoComplete="off"
@@ -323,7 +339,7 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
       {!chargement && filtree && filtree.length > 0 && (
         <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
           {filtree.map((a) => {
-            const { initiale, meta, tag, enQuarantaine, aria } = decrireApprenant(a);
+            const { initiale, meta, tag, enQuarantaine, sansOfficine, aria } = decrireApprenant(a);
             return (
               <button
                 key={a.id}
@@ -359,6 +375,7 @@ function ApprenantsListe({ onOuvrir, onAnnuaire, onBack }) {
                       proposer aux apprenants les fautes de frappe et les doublons
                       hérités. */}
                   {enQuarantaine && <span className="tag">Non suggérée</span>}
+                  {sansOfficine && <span className="tag">Sans officine</span>}
                   <span className="tag">{tag}</span>
                 </span>
               </button>

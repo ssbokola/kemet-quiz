@@ -16,3 +16,17 @@ export function phraseFusion(source, cible, n) {
       : `${source} n’a aucune évaluation enregistrée : rien ne sera déplacé.`;
   return `${deplacement} La fiche de ${source} disparaîtra ensuite de l’annuaire.`;
 }
+
+/**
+ * Le pendant de phraseFusion() pour les officines : ici « n » compte des
+ * APPRENANTS rattachés, pas des évaluations — c'est ce qui se déplace le plus
+ * visiblement à l'écran, même si les participations suivent aussi.
+ */
+export function phraseFusionOfficine(source, cible, n) {
+  const combien = Number.isFinite(n) ? n : 0;
+  const deplacement =
+    combien > 0
+      ? `Les ${combien} apprenant${combien > 1 ? 's' : ''} de ${source} passeront sous l’officine de ${cible}, avec leurs participations.`
+      : `${source} n’a aucun apprenant rattaché : rien ne sera déplacé.`;
+  return `${deplacement} L’officine de ${source} disparaîtra ensuite de l’annuaire.`;
+}

@@ -109,7 +109,20 @@ function creerUnion(n) {
  * Rendu trié par total d'évaluations décroissant : le groupe qui porte le plus
  * d'historique est celui qu'il coûte le plus cher à laisser en l'état.
  */
-function groupesProbables(fiches) {
+/**
+ * @param options.motsVides Ensemble de mots qui ne DISTINGUENT rien dans le
+ *   domaine appelant — pour les officines : « pharmacie », « nouvelle », « du »…
+ *   Vide par défaut, donc le comportement sur les personnes est identique au
+ *   bit près. Ne JAMAIS coder une liste en dur ici : « Grande » est un
+ *   patronyme possible, et ce module sert aussi aux personnes.
+ *
+ * ⛔ Les mots vides ne servent NI à R1 NI à R2, et c'est délibéré. Les retirer
+ * avant R1 réduirait « Pharmacie du Plateau » et « Grande Pharmacie du
+ * Plateau » au même multiensemble { plateau } : R1 proposerait alors de
+ * fusionner deux officines bel et bien distinctes. Ils ne servent qu'à MESURER
+ * combien d'information porte une fiche, dans R3.
+ */
+function groupesProbables(fiches, { motsVides = new Set() } = {}) {
   const liste = Array.isArray(fiches) ? fiches : [];
   const n = liste.length;
   if (n < 2) return [];
@@ -195,16 +208,36 @@ function groupesProbables(fiches) {
       partielsPar.set(i, (partielsPar.get(i) || 0) + 1);
     }
   }
+  // Le nombre de mots qui DISTINGUENT vraiment, mots vides déduits. Sans mots
+  // vides (le cas des personnes) c'est simplement la taille de l'ensemble.
+  const nbUtiles = (i) => {
+    let n = 0;
+    for (const mot of ensembles[i]) if (!motsVides.has(mot)) n += 1;
+    return n;
+  };
+
   for (const [i, j] of candidatsR3) {
     const combien = partielsPar.get(i) || 0;
-    // Un nom d'UN SEUL mot inclus dans plusieurs autres ne dit rien : « Kouassi »
-    // est un patronyme très courant, il serait le sous-ensemble de tous les
-    // « Kouassi X » de l'officine. On exige alors l'unicité — une seule fiche
-    // plus complète, sans ambiguïté possible.
-    // À deux mots ou plus, le plafond est plus large : sur les vraies données,
-    // « Flore Sidonie » est inclus dans TROIS variantes de la même personne, et
-    // l'exclure sortirait du groupe la fiche qui porte le plus d'évaluations.
-    const plafond = ensembles[i].size === 1 ? 1 : MAX_PARTIELS_PAR_FICHE;
+    const utiles = nbUtiles(i);
+
+    // Une fiche faite UNIQUEMENT de mots vides — « La Nouvelle Pharmacie » — est
+    // le sous-ensemble de presque tout et n'est le nom incomplet de personne :
+    // l'inclusion n'apprend rien, on jette l'arête. Elle reste rapprochable par
+    // R1 (mêmes mots, ordre différent) et par R2 (une faute de frappe), les deux
+    // seules règles où sa forme exacte porte encore de l'information.
+    // Sans mots vides, `utiles` vaut la taille de l'ensemble et ce test est
+    // inatteignable (petit.size === 0 a déjà été écarté plus haut).
+    if (utiles === 0) continue;
+
+    // Un nom d'UN SEUL mot utile inclus dans plusieurs autres ne dit rien :
+    // « Kouassi » est un patronyme très courant et serait le sous-ensemble de
+    // tous les « Kouassi X ». On exige alors l'unicité — une seule fiche plus
+    // complète, sans ambiguïté possible.
+    // À deux mots utiles ou plus, le plafond est plus large : sur les vraies
+    // données, « Flore Sidonie » est inclus dans TROIS variantes de la même
+    // personne, et l'exclure sortirait du groupe la fiche qui porte le plus
+    // d'évaluations.
+    const plafond = utiles <= 1 ? 1 : MAX_PARTIELS_PAR_FICHE;
     if (combien > plafond) continue;
     noter(i, j, RAISONS.incomplet);
   }

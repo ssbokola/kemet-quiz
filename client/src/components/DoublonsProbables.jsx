@@ -2,24 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import RadioGroup from './RadioGroup';
 import { adminFetchOuReseau, messageErreur, MESSAGE_RESEAU } from '../api';
-import { phraseFusion } from '../nom';
 import { useFocusAuMontage } from '../ecran';
 
 const AUCUNE_ERREUR = { texte: '', n: 0 };
 
-/** Accord au pluriel du mot « évaluation », comme sur les écrans voisins. */
-function evaluations(n) {
-  return `${n} évaluation${n > 1 ? 's' : ''}`;
-}
-
 /**
  * Doublons probables — espace formateur uniquement.
  *
- * Le serveur PROPOSE des groupes de fiches qui désignent vraisemblablement la
- * même personne ; cet écran les montre, et le formateur tranche. Rien n'est
- * fusionné automatiquement : mergeLearners déplace les évaluations puis
- * supprime la fiche source SANS conserver la provenance — une fusion à tort ne
- * se défait pas, même avec une sauvegarde en main.
+ * Paramétré pour servir aussi bien l'annuaire des APPRENANTS (valeurs par
+ * défaut, comportement inchangé) que celui des OFFICINES : les cinq points qui
+ * liaient l'écran aux apprenants sont devenus des props — l'URL de lecture,
+ * l'URL de fusion, le vocabulaire, le décompte (« évaluations » contre
+ * « apprenants »), et la lecture de la réponse de fusion (les deux routes ne
+ * rendent pas la même forme : { moved } contre { movedLearners, movedResults }).
+ *
+ * Le serveur PROPOSE des groupes de fiches qui désignent vraisemblablement le
+ * même établissement ou la même personne ; cet écran les montre, et le
+ * formateur tranche. Rien n'est fusionné automatiquement : une fusion déplace
+ * puis supprime la fiche source SANS conserver la provenance — une fusion à
+ * tort ne se défait pas, même avec une sauvegarde en main.
  *
  * Des GROUPES et non des paires : sur les vraies données, une même personne
  * saisie de quatre façons produit six paires. Six cartes pour une personne se
@@ -30,7 +31,46 @@ function evaluations(n) {
  * bouton « tout fusionner » irait plus vite mais retirerait au formateur le
  * seul endroit où il peut dire « celle-là, non ».
  */
-function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
+function DoublonsProbables({
+  onRetour,
+  onFusion,
+  messageEntrant = '',
+  urlGroupes = '/api/learners/doublons',
+  urlFusion = (sourceId) => `/api/learners/${sourceId}/merge`,
+  titre = 'Doublons probables',
+  description = 'Des fiches qui désignent peut-être la même personne. Rien n’est fusionné sans vous : vérifiez, puis réunissez-les.',
+  texteVideTitre = 'Aucun doublon probable',
+  texteVideDescription = 'Chaque fiche de l’annuaire semble désigner une personne distincte. Revenez ici après quelques évaluations.',
+  libelleFicheAConserver = 'Fiche à conserver',
+  libelleARattacher = 'À rattacher',
+  libelleRetour = 'Retour à l’annuaire',
+  libelleChargement = 'Recherche des doublons…',
+  libelleConfirmer = 'Confirmer le rattachement',
+  libelleAction = 'Rattacher',
+  // Combien de fiches un groupe rapproche : « évaluations » pour les
+  // apprenants, « apprenants rattachés » pour les officines.
+  compter = (n) => `${n} évaluation${n > 1 ? 's' : ''}`,
+  // Ce que la fusion va faire, en toutes lettres — un geste irréversible ne se
+  // confirme jamais sur une formulation générique.
+  phrase = (source, cible, n) => {
+    const combien = Number.isFinite(n) ? n : 0;
+    const deplacement =
+      combien > 0
+        ? `Les ${combien} évaluation${combien > 1 ? 's' : ''} de ${source} passeront sous la fiche de ${cible}.`
+        : `${source} n’a aucune évaluation enregistrée : rien ne sera déplacé.`;
+    return `${deplacement} La fiche de ${source} disparaîtra ensuite de l’annuaire.`;
+  },
+  // Lit la réponse de la route de fusion et rend le compte rendu à annoncer,
+  // ou null si la forme est inattendue. Les deux routes ne rendent PAS la
+  // même chose : { moved } pour les apprenants, { movedLearners, movedResults }
+  // pour les officines.
+  interpreterReponseFusion = (data, source, cible) => {
+    if (!data || !Number.isFinite(data.moved)) return null;
+    return `${compter(data.moved)} déplacée${data.moved > 1 ? 's' : ''} vers la fiche de ${
+      cible.displayName
+    }. La fiche de ${source.displayName} a été fusionnée.`;
+  },
+}) {
   const [groupes, setGroupes] = useState(null);
   const [stockage, setStockage] = useState(null);
   const [chargement, setChargement] = useState(true);
@@ -64,7 +104,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
     let annule = false;
     (async () => {
       try {
-        const res = await adminFetchOuReseau('/api/learners/doublons');
+        const res = await adminFetchOuReseau(urlGroupes);
         if (!res.ok) {
           throw new Error(await messageErreur(res, 'Les doublons n’ont pas pu être chargés.'));
         }
@@ -84,9 +124,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
         if (!messageEntrant) {
           const n = data.groupes.length;
           setAnnonce(
-            n === 0
-              ? 'Aucun doublon probable.'
-              : `${n} groupe${n > 1 ? 's' : ''} de fiches à vérifier.`
+            n === 0 ? 'Aucun doublon probable.' : `${n} groupe${n > 1 ? 's' : ''} de fiches à vérifier.`
           );
         }
       } catch (err) {
@@ -99,7 +137,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
       annule = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [urlGroupes]);
 
   // Le texte de la confirmation ne vit pas dans une région live : le focaliser
   // est la seule façon de le faire énoncer.
@@ -114,7 +152,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
     signaler('');
     setAnnonce('');
     try {
-      const res = await adminFetchOuReseau(`/api/learners/${source.id}/merge`, {
+      const res = await adminFetchOuReseau(urlFusion(source.id), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ intoId: cible.id }),
@@ -123,16 +161,13 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
         throw new Error(await messageErreur(res, 'La fusion n’a pas abouti.'));
       }
       const data = await res.json().catch(() => null);
-      if (!data || !Number.isFinite(data.moved)) {
+      // Le compte annoncé est celui du SERVEUR, pas celui qu'affichait la
+      // carte : entre l'affichage et le clic, un apprenant a pu répondre.
+      const compteRendu = interpreterReponseFusion(data, source, cible);
+      if (!compteRendu) {
         throw new Error('Le serveur a renvoyé une réponse inattendue.');
       }
-      // Le compte annoncé est celui du SERVEUR (`moved`), pas celui qu'affichait
-      // la carte : entre l'affichage et le clic, un apprenant a pu répondre.
-      onFusion(
-        `${evaluations(data.moved)} déplacée${data.moved > 1 ? 's' : ''} vers la fiche de ${
-          cible.displayName
-        }. La fiche de ${source.displayName} a été fusionnée.`
-      );
+      onFusion(compteRendu);
     } catch (err) {
       // L'échec laisse la confirmation ouverte : le focus n'a pas bougé, la
       // région d'alerte dit pourquoi, et le geste reste à portée.
@@ -146,12 +181,9 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
     <div className="stack">
       <div className="page-head">
         <h1 ref={titreRef} tabIndex={-1}>
-          Doublons probables
+          {titre}
         </h1>
-        <p>
-          Des fiches qui désignent peut-être la même personne. Rien n’est fusionné sans vous :
-          vérifiez, puis réunissez-les.
-        </p>
+        <p>{description}</p>
       </div>
 
       <div className="error-slot" role="alert" aria-atomic="true">
@@ -181,7 +213,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
       {chargement && (
         <div className="loading-screen">
           <span className="spinner" aria-hidden="true" />
-          <span>Recherche des doublons…</span>
+          <span>{libelleChargement}</span>
         </div>
       )}
 
@@ -190,11 +222,8 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
           <span className="empty-state-icon" aria-hidden="true">
             <Icon name="check" size={22} width={1.6} />
           </span>
-          <h2>Aucun doublon probable</h2>
-          <p>
-            Chaque fiche de l’annuaire semble désigner une personne distincte. Revenez ici après
-            quelques évaluations.
-          </p>
+          <h2>{texteVideTitre}</h2>
+          <p>{texteVideDescription}</p>
         </div>
       )}
 
@@ -216,7 +245,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
 
               <div className="field">
                 <span className="field-label" id={idLabel}>
-                  Fiche à conserver
+                  {libelleFicheAConserver}
                 </span>
                 <RadioGroup
                   className="choices"
@@ -224,7 +253,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
                   options={groupe.fiches.map((f) => ({
                     value: f.id,
                     label: f.displayName,
-                    desc: evaluations(f.attempts || 0),
+                    desc: compter(f.attempts || 0),
                   }))}
                   value={cible.id}
                   onChange={(id) => {
@@ -245,7 +274,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
               </div>
 
               <div className="field">
-                <span className="field-label">À rattacher</span>
+                <span className="field-label">{libelleARattacher}</span>
                 {autres.map((f) => (
                   <button
                     key={f.id}
@@ -255,13 +284,13 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
                       signaler('');
                       setConfirmation({ groupe: index, source: f, cible });
                     }}
-                    aria-label={`Rattacher ${f.displayName}, ${evaluations(
+                    aria-label={`Rattacher ${f.displayName}, ${compter(
                       f.attempts || 0
                     )}, à la fiche de ${cible.displayName}.`}
                   >
                     <span className="recent-row-body">
                       <span className="recent-row-title">{f.displayName}</span>
-                      <span className="recent-row-meta">{evaluations(f.attempts || 0)}</span>
+                      <span className="recent-row-meta">{compter(f.attempts || 0)}</span>
                     </span>
                     <span className="tag">Rattacher</span>
                   </button>
@@ -274,13 +303,13 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
               {confirmation && confirmation.groupe === index && (
                 <div className="notice-confirm">
                   <h3 className="eyebrow" ref={confirmationRef} tabIndex={-1}>
-                    Confirmer le rattachement
+                    {libelleConfirmer}
                   </h3>
                   <p className="notice">
                     <Icon name="info" size={15} width={1.8} />
                     <span>
                       <b>Cette action est irréversible.</b>{' '}
-                      {phraseFusion(
+                      {phrase(
                         confirmation.source.displayName,
                         confirmation.cible.displayName,
                         confirmation.source.attempts
@@ -301,7 +330,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
                       onClick={fusionner}
                       aria-busy={fusion}
                     >
-                      {fusion ? 'Patientez…' : 'Rattacher'}
+                      {fusion ? 'Patientez…' : libelleAction}
                     </button>
                   </div>
                 </div>
@@ -315,7 +344,7 @@ function DoublonsProbables({ onRetour, onFusion, messageEntrant = '' }) {
           sinon l'utilisateur. */}
       <button type="button" className="btn btn--ghost btn--block" onClick={onRetour}>
         <Icon name="arrowLeft" size={16} width={1.7} />
-        Retour à l’annuaire
+        {libelleRetour}
       </button>
     </div>
   );

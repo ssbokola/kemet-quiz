@@ -103,6 +103,7 @@ function QuizPage() {
   const { id } = useParams();
   const [step, setStep] = useState('welcome');
   const [playerName, setPlayerName] = useState('');
+  const [pharmacyName, setPharmacyName] = useState('');
   const [quizData, setQuizData] = useState(null);
   const [userAnswers, setUserAnswers] = useState({});
   const [resultData, setResultData] = useState(null);
@@ -159,6 +160,11 @@ function QuizPage() {
         const saved = loadProgress(id);
         if (saved && saved.playerName) {
           setPlayerName(saved.playerName);
+          // `saved.pharmacyName` peut manquer : une session en vol au moment
+          // où l'officine a été ajoutée n'en a jamais eu. On reprend quand
+          // même directement dans le quiz — jamais de retour à Welcome ni
+          // d'obligation a posteriori, l'apprenant a déjà commencé.
+          setPharmacyName(saved.pharmacyName || '');
           setUserAnswers(saved.answers || {});
           setStep('quiz');
           setResumed(true);
@@ -180,14 +186,15 @@ function QuizPage() {
 
   useEffect(() => {
     if (step === 'quiz' && playerName) {
-      saveProgress(id, { playerName, answers: userAnswers, startedAt: Date.now() });
+      saveProgress(id, { playerName, pharmacyName, answers: userAnswers, startedAt: Date.now() });
     }
-  }, [id, step, playerName, userAnswers]);
+  }, [id, step, playerName, pharmacyName, userAnswers]);
 
   const handleRestart = () => {
     clearProgress(id);
     setUserAnswers({});
     setPlayerName('');
+    setPharmacyName('');
     setResumed(false);
     setStep('welcome');
   };
@@ -199,7 +206,7 @@ function QuizPage() {
       const res = await fetchOuReseau(`/api/quiz/${id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerName, answers: userAnswers }),
+        body: JSON.stringify({ playerName, pharmacyName, answers: userAnswers }),
       });
 
       if (!res.ok) {
@@ -396,8 +403,9 @@ function QuizPage() {
           questionCount={quizData.questions.length}
           singleAttempt={quizData.singleAttempt !== false}
           quizId={id}
-          onSubmit={(name) => {
+          onSubmit={(name, pharmacy) => {
             setPlayerName(name);
+            setPharmacyName(pharmacy);
             setStep('quiz');
           }}
         />

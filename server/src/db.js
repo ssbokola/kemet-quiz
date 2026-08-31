@@ -73,6 +73,7 @@ const { nameKey } = require('./name-key');
 const { newId } = require('./ids');
 const { fusionnerSuggestions } = require('./suggestion');
 const { groupesProbables } = require('./similarite');
+const { MOTS_VIDES_OFFICINE } = require('./mots-vides-officine');
 
 // Interpolé dans le PRAGMA plus bas : PRAGMA n'accepte aucun paramètre lié.
 // Ce n'est pas une injection, c'est un littéral du code — jamais une saisie.
@@ -164,6 +165,30 @@ function migrate() {
       );
 
       CREATE INDEX IF NOT EXISTS idx_answers_quiz ON answers(quiz_id, question_index);
+
+      -- Les officines. Mêmes colonnes que la table learners, à dessein :
+      -- suggestPharmacies devient la COPIE EXACTE de suggestLearners — même GLOB,
+      -- même index, même NOT GLOB. La colonne suggestible est conservée alors
+      -- qu'aucune quarantaine d'import n'existe ici : elle permet au formateur de
+      -- masquer « test » ou une graphie fautive sans la supprimer. La colonne
+      -- created_by ne prend que 'learner' ou 'trainer' : il n'y a rien à
+      -- importer, donc pas de 'import'.
+      --
+      -- ⚠️ AUCUN ACCENT GRAVE dans ces commentaires : ce bloc vit dans un
+      -- gabarit de chaîne JavaScript, un accent grave y terminerait la chaîne.
+      --
+      -- ⚠️ DÉCLARÉE AVANT les ALTER TABLE ci-dessous : PRAGMA foreign_keys est ON,
+      -- et une référence vers une table absente serait rejetée.
+      CREATE TABLE IF NOT EXISTS pharmacies (
+        id           TEXT    PRIMARY KEY,
+        display_name TEXT    NOT NULL,
+        name_key     TEXT    NOT NULL,
+        created_at   TEXT    NOT NULL,
+        created_by   TEXT    NOT NULL DEFAULT 'learner',
+        suggestible  INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pharmacies_key ON pharmacies(name_key);
     `);
 
     const hasLearnerId = db
@@ -186,9 +211,50 @@ function migrate() {
       }
     }
 
+    // Les trois colonnes d'officine. Même motif que learner_id ci-dessus —
+    // sonde PRAGMA puis rattrapage de « duplicate column name » — mais écrit
+    // une fois : trois recopies du bloc dériveraient.
+    //
+    // ⛔ ALTER TABLE et surtout PAS une colonne ajoutée au CREATE TABLE :
+    // `CREATE TABLE IF NOT EXISTS` n'altère JAMAIS une table déjà créée, et ne
+    // le dit pas. La colonne n'existerait jamais en production, en silence.
+    const ajouterColonne = (table, colonne, definition) => {
+      const existe = db
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .some((col) => col.name === colonne);
+      if (existe) return;
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${colonne} ${definition}`);
+      } catch (err) {
+        // Deux processus qui démarrent ensemble lisent le PRAGMA au même
+        // instant : le perdant reçoit « duplicate column name », qui est ici un
+        // succès déguisé et non une panne.
+        if (!/duplicate column name/i.test(err.message)) throw err;
+      }
+    };
+
+    // L'officine ACTUELLE de la personne. ON DELETE SET NULL, JAMAIS CASCADE :
+    // supprimer une officine ne doit effacer ni un apprenant ni une
+    // participation. SQLite exige d'ailleurs qu'un ADD COLUMN porteur d'une clé
+    // étrangère soit sans DEFAULT, donc nullable.
+    ajouterColonne('learners', 'pharmacy_id', 'TEXT REFERENCES pharmacies(id) ON DELETE SET NULL');
+    ajouterColonne('results', 'pharmacy_id', 'TEXT REFERENCES pharmacies(id) ON DELETE SET NULL');
+
+    // La graphie du JOUR, FIGÉE — et c'est pour cela qu'elle existe EN PLUS de
+    // pharmacy_id. Une clé étrangère n'est pas figée : renommer ou fusionner une
+    // officine réécrirait l'histoire, et ON DELETE SET NULL l'effacerait.
+    // C'est l'analogue exact du triplet déjà en place sur les personnes :
+    // player_name (figé) + player_key + learner_id (référence vivante).
+    // Pas de pharmacy_key : rien ne cherche par clé d'officine sur results, il
+    // n'existe aucune règle de tentative unique par officine.
+    ajouterColonne('results', 'pharmacy_name', 'TEXT');
+
     db.exec(
       'CREATE INDEX IF NOT EXISTS idx_results_learner_date ON results(learner_id, submitted_at)'
     );
+    db.exec('CREATE INDEX IF NOT EXISTS idx_results_pharmacy ON results(quiz_id, pharmacy_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_learners_pharmacy ON learners(pharmacy_id)');
 
     // AVANT backfillLearners, et ce n'est pas indifférent : le backfill
     // regroupe les participations orphelines PAR player_key et fabrique une
@@ -429,11 +495,14 @@ function rowToQuiz(row) {
   };
 }
 
-// Volontairement INCHANGÉ : learner_id n'entre pas ici. GET /api/quiz/:id/results
-// doit renvoyer exactement les mêmes champs qu'avant l'annuaire.
+// learner_id n'entre TOUJOURS pas ici : GET /api/quiz/:id/results reste un
+// écran de scores, pas une fiche d'identité. pharmacy_name, lui, est ajouté
+// délibérément — c'est la graphie du jour, et c'est ce qui permet à
+// QuizResults de regrouper les réponses par officine.
 function rowToResult(row) {
   return {
     playerName: row.player_name,
+    pharmacyName: row.pharmacy_name ?? null,
     score: row.score,
     total: row.total,
     submittedAt: row.submitted_at,
@@ -444,6 +513,23 @@ function rowToResult(row) {
 // SQLite ne connaît que 0 et 1, et un 0 traversant l'API serait « faux » à
 // l'affichage mais « vrai » à un `if (learner.suggestible)` mal écrit.
 function rowToLearner(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    displayName: row.display_name,
+    nameKey: row.name_key,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    suggestible: Boolean(row.suggestible),
+    // L'officine ACTUELLE de la personne — null tant qu'elle n'en a pas.
+    // `row.pharmacy_id` existe sur `SELECT *` dès que la colonne existe ;
+    // `undefined` ne se produit que si la requête ne l'a pas sélectionnée.
+    pharmacyId: row.pharmacy_id ?? null,
+  };
+}
+
+// Copie exacte de rowToLearner : mêmes colonnes, même forme.
+function rowToPharmacy(row) {
   if (!row) return null;
   return {
     id: row.id,
@@ -478,8 +564,10 @@ const stmt = {
     ORDER BY created_at DESC
   `),
   insertResult: db.prepare(`
-    INSERT INTO results (quiz_id, player_name, player_key, learner_id, score, total, submitted_at)
-    VALUES (@quizId, @playerName, @playerKey, @learnerId, @score, @total, @submittedAt)
+    INSERT INTO results
+      (quiz_id, player_name, player_key, learner_id, pharmacy_id, pharmacy_name, score, total, submitted_at)
+    VALUES
+      (@quizId, @playerName, @playerKey, @learnerId, @pharmacyId, @pharmacyName, @score, @total, @submittedAt)
   `),
 
   insertAnswer: db.prepare(`
@@ -588,12 +676,18 @@ const stmt = {
   // Tri par name_key et non display_name : name_key est en minuscules sans
   // diacritiques, son ordre BINARY est alphabétique, là où display_name
   // rangerait toutes les majuscules avant toutes les minuscules.
+  // p.display_name via LEFT JOIN, jamais via une sous-requête sur results :
+  // c'est l'officine ACTUELLE de la fiche, indépendante de la période
+  // demandée — un apprenant sans participation sur la fenêtre garde son
+  // officine affichée.
   listLearners: db.prepare(`
     SELECT l.id, l.display_name, l.created_at, l.created_by, l.suggestible,
+           l.pharmacy_id, p.display_name AS pharmacy_name,
            COUNT(r.id) AS attempts,
            AVG(CASE WHEN r.total > 0 THEN r.score * 100.0 / r.total END) AS avg_percent,
            MAX(r.submitted_at) AS last_submitted_at
       FROM learners l
+      LEFT JOIN pharmacies p ON p.id = l.pharmacy_id
       LEFT JOIN results r
         ON r.learner_id = l.id
        AND (@from IS NULL OR r.submitted_at >= @from)
@@ -604,9 +698,12 @@ const stmt = {
 
   // player_name est renvoyé tel qu'il a été tapé ce jour-là : renommer une
   // fiche ne réécrit jamais une ligne de results.
+  // r.pharmacy_name, jamais une jointure vers pharmacies : c'est la graphie du
+  // JOUR, figée sur la ligne — l'officine actuelle de la fiche peut avoir
+  // changé depuis, l'historique ne doit pas le montrer rétroactivement.
   listLearnerHistory: db.prepare(`
     SELECT r.id AS result_id, r.quiz_id, q.title AS quiz_title, r.player_name,
-           r.score, r.total, r.submitted_at
+           r.pharmacy_name, r.score, r.total, r.submitted_at
       FROM results r
       JOIN quizzes q ON q.id = r.quiz_id
      WHERE r.learner_id = @learnerId
@@ -634,6 +731,69 @@ const stmt = {
      GROUP BY l.id
      ORDER BY l.name_key
   `),
+
+  // ---------------------------------------------------------------------------
+  // Annuaire des officines — copie exacte du bloc apprenants ci-dessus, même
+  // GLOB, même index, même NOT GLOB. Seul ce qui EST différent change :
+  // « attempts » ici compte des APPRENANTS rattachés, pas des participations.
+  // ---------------------------------------------------------------------------
+
+  insertPharmacy: db.prepare(`
+    INSERT INTO pharmacies (id, display_name, name_key, created_at, created_by, suggestible)
+    VALUES (@id, @displayName, @nameKey, @createdAt, @createdBy, @suggestible)
+    ON CONFLICT(name_key) DO NOTHING
+  `),
+  getPharmacy: db.prepare('SELECT * FROM pharmacies WHERE id = ?'),
+  getPharmacyByKey: db.prepare('SELECT * FROM pharmacies WHERE name_key = ?'),
+  promotePharmacy: db.prepare('UPDATE pharmacies SET suggestible = 1 WHERE id = ?'),
+  deletePharmacy: db.prepare('DELETE FROM pharmacies WHERE id = ?'),
+
+  suggestPharmacies: db.prepare(`
+    SELECT display_name FROM pharmacies
+    WHERE suggestible = 1 AND name_key GLOB @pattern
+    ORDER BY name_key
+    LIMIT @limit
+  `),
+
+  suggestPharmaciesMot: db.prepare(`
+    SELECT display_name FROM pharmacies
+    WHERE suggestible = 1 AND name_key GLOB @motif AND name_key NOT GLOB @debut
+    ORDER BY name_key
+    LIMIT @limit
+  `),
+
+  // « attempts » = nombre d'APPRENANTS rattachés, pas de participations : un
+  // apprenant qui passe cinq quiz ne doit pas peser cinq fois plus qu'un
+  // apprenant qui n'en a passé qu'un seul dans le classement des officines.
+  listPharmacies: db.prepare(`
+    SELECT p.id, p.display_name, p.created_at, p.created_by, p.suggestible,
+           COUNT(l.id) AS attempts
+      FROM pharmacies p
+      LEFT JOIN learners l ON l.pharmacy_id = p.id
+     GROUP BY p.id
+     ORDER BY p.name_key
+  `),
+
+  movePharmacyLearners: db.prepare(
+    'UPDATE learners SET pharmacy_id = @intoId WHERE pharmacy_id = @sourceId'
+  ),
+  // results.pharmacy_id sert au regroupement des scores par officine ; il migre
+  // avec la fusion pour rester cohérent. results.pharmacy_name, lui, N'EST PAS
+  // touché : c'est la graphie du JOUR, figée, elle ne se réécrit jamais.
+  movePharmacyResults: db.prepare(
+    'UPDATE results SET pharmacy_id = @intoId WHERE pharmacy_id = @sourceId'
+  ),
+
+  listDuplicatePharmacyCandidates: db.prepare(`
+    SELECT p.id, p.display_name, p.name_key, p.created_by, p.suggestible,
+           COUNT(l.id) AS attempts
+      FROM pharmacies p
+      LEFT JOIN learners l ON l.pharmacy_id = p.id
+     GROUP BY p.id
+     ORDER BY p.name_key
+  `),
+
+  setLearnerPharmacy: db.prepare('UPDATE learners SET pharmacy_id = @pharmacyId WHERE id = @id'),
 };
 
 // Champs modifiables par PATCH /api/quiz/:id, chacun vers sa colonne.
@@ -741,6 +901,11 @@ function addResult(quizId, result) {
       // l'appelant oublierait learnerId, la participation partirait orpheline
       // sans que rien ne proteste.
       learnerId: result.learnerId ?? null,
+      // pharmacyName est la graphie du JOUR, FIGÉE — l'analogue de playerName.
+      // pharmacyId sert au regroupement ; ni l'un ni l'autre ne se réécrit si
+      // l'officine est renommée ou fusionnée ensuite.
+      pharmacyId: result.pharmacyId ?? null,
+      pharmacyName: result.pharmacyName ?? null,
       score: result.score,
       total: result.total,
       submittedAt: result.submittedAt,
@@ -978,6 +1143,8 @@ function listLearners({ from = null, to = null } = {}) {
     createdAt: row.created_at,
     createdBy: row.created_by,
     suggestible: Boolean(row.suggestible),
+    pharmacyId: row.pharmacy_id ?? null,
+    pharmacyName: row.pharmacy_name ?? null,
     attempts: row.attempts ?? 0,
     avgPercent: row.avg_percent ?? null,
     lastSubmittedAt: row.last_submitted_at ?? null,
@@ -994,6 +1161,7 @@ function listLearnerHistory(learnerId, { from = null, to = null } = {}) {
       quizId: row.quiz_id,
       quizTitle: row.quiz_title,
       playerName: row.player_name,
+      pharmacyName: row.pharmacy_name ?? null,
       score: row.score,
       total: row.total,
       submittedAt: row.submitted_at,
@@ -1057,6 +1225,199 @@ function listDuplicateCandidates() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Annuaire des officines — copie fonctionnelle du bloc apprenants ci-dessus.
+// ---------------------------------------------------------------------------
+
+/** Les officines dont UN MOT du nom commence par `prefixKey`. Copie de suggestLearners. */
+function suggestPharmacies(prefixKey, limit = 8) {
+  const prefixe = String(prefixKey ?? '');
+  if (!prefixe) return [];
+
+  const n = Math.floor(Number(limit));
+  const borne = Number.isFinite(n) && n > 0 ? n : 8;
+
+  const prefixes = stmt.suggestPharmacies
+    .all({ pattern: `${prefixe}*`, limit: borne })
+    .map((row) => row.display_name);
+  const mots = stmt.suggestPharmaciesMot
+    .all({ motif: `* ${prefixe}*`, debut: `${prefixe}*`, limit: borne })
+    .map((row) => row.display_name);
+
+  return fusionnerSuggestions(prefixes, mots, borne);
+}
+
+/** La fiche d'officine correspondant à ce nom, ou null. Ne crée jamais rien. */
+function resolvePharmacy(name) {
+  return rowToPharmacy(stmt.getPharmacyByKey.get(nameKey(name)));
+}
+
+/**
+ * La fiche d'officine, créée au besoin. Seule porte d'entrée publique :
+ * une fiche naît par effet de bord de l'envoi des réponses, comme pour
+ * ensureLearner — jamais par une route dédiée qu'un curieux pourrait marteler.
+ */
+function ensurePharmacy(name) {
+  const key = nameKey(name);
+  const existant = stmt.getPharmacyByKey.get(key);
+
+  if (existant) {
+    if (!existant.suggestible) {
+      stmt.promotePharmacy.run(existant.id);
+      existant.suggestible = 1;
+    }
+    return { pharmacy: rowToPharmacy(existant), created: false };
+  }
+
+  const id = newId();
+  stmt.insertPharmacy.run({
+    id,
+    displayName: String(name ?? '').trim(),
+    nameKey: key,
+    createdAt: new Date().toISOString(),
+    createdBy: 'learner',
+    suggestible: 1,
+  });
+
+  const row = stmt.getPharmacyByKey.get(key);
+  return { pharmacy: rowToPharmacy(row), created: row.id === id };
+}
+
+/** Création à la main par le formateur. Le doublon est une erreur parlante. */
+function createPharmacy(displayName) {
+  const nom = String(displayName ?? '').trim();
+  const key = nameKey(nom);
+
+  const doublon = (fiche) => {
+    const err = new Error('Une officine porte déjà ce nom.');
+    err.code = 'DUPLICATE';
+    err.pharmacy = rowToPharmacy(fiche);
+    return err;
+  };
+
+  const existant = stmt.getPharmacyByKey.get(key);
+  if (existant) throw doublon(existant);
+
+  const id = newId();
+  stmt.insertPharmacy.run({
+    id,
+    displayName: nom,
+    nameKey: key,
+    createdAt: new Date().toISOString(),
+    createdBy: 'trainer',
+    suggestible: 1,
+  });
+
+  const row = stmt.getPharmacyByKey.get(key);
+  if (row.id !== id) throw doublon(row);
+  return { pharmacy: rowToPharmacy(row) };
+}
+
+/** Écriture partielle. Renommer recalcule name_key mais ne réécrit AUCUNE ligne
+ * de results — pharmacy_name y reste la graphie du jour, figée. */
+function updatePharmacy(id, patch) {
+  const actuel = stmt.getPharmacy.get(id);
+  if (!actuel) return null;
+
+  const sets = [];
+  const values = { id };
+
+  if ('displayName' in patch) {
+    const nom = String(patch.displayName ?? '').trim();
+    const key = nameKey(nom);
+    const collision = stmt.getPharmacyByKey.get(key);
+    if (collision && collision.id !== id) {
+      const err = new Error('Une officine porte déjà ce nom.');
+      err.code = 'DUPLICATE';
+      err.pharmacy = rowToPharmacy(collision);
+      throw err;
+    }
+    sets.push('display_name = @displayName', 'name_key = @nameKey');
+    values.displayName = nom;
+    values.nameKey = key;
+  }
+
+  if ('suggestible' in patch) {
+    sets.push('suggestible = @suggestible');
+    values.suggestible = patch.suggestible ? 1 : 0;
+  }
+
+  if (!sets.length) return rowToPharmacy(actuel);
+
+  db.prepare(`UPDATE pharmacies SET ${sets.join(', ')} WHERE id = @id`).run(values);
+  return rowToPharmacy(stmt.getPharmacy.get(id));
+}
+
+function getPharmacy(id) {
+  return rowToPharmacy(stmt.getPharmacy.get(id));
+}
+
+/** Toutes les officines, avec le nombre d'apprenants rattachés à chacune. */
+function listPharmacies() {
+  return stmt.listPharmacies.all().map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    suggestible: Boolean(row.suggestible),
+    attempts: row.attempts ?? 0,
+  }));
+}
+
+/**
+ * Fusionne deux fiches d'officine. Déplace DEUX choses — les apprenants ET les
+ * participations rattachés — dans une seule transaction : une fusion à moitié
+ * faite laisserait des résultats attachés à une officine supprimée.
+ * results.pharmacy_name n'est PAS touché : c'est la graphie figée du jour.
+ */
+function mergePharmacies(sourceId, intoId) {
+  if (!sourceId || !intoId || sourceId === intoId) return { movedLearners: 0, movedResults: 0 };
+
+  const source = stmt.getPharmacy.get(sourceId);
+  const cible = stmt.getPharmacy.get(intoId);
+  if (!source || !cible) return { movedLearners: 0, movedResults: 0 };
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const infoLearners = stmt.movePharmacyLearners.run({ intoId, sourceId });
+    const infoResults = stmt.movePharmacyResults.run({ intoId, sourceId });
+    stmt.deletePharmacy.run(sourceId);
+    db.exec('COMMIT');
+    return { movedLearners: Number(infoLearners.changes), movedResults: Number(infoResults.changes) };
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+/**
+ * Les groupes d'officines qui désignent PROBABLEMENT le même établissement.
+ * Les mots ultra-fréquents (« pharmacie », « nouvelle »…) sont neutralisés
+ * dans R3 — voir server/src/mots-vides-officine.js et le commentaire de
+ * groupesProbables dans similarite.js.
+ */
+function listDuplicatePharmacyCandidates() {
+  return groupesProbables(
+    stmt.listDuplicatePharmacyCandidates.all().map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      nameKey: row.name_key,
+      createdBy: row.created_by,
+      suggestible: Boolean(row.suggestible),
+      attempts: row.attempts ?? 0,
+    })),
+    { motsVides: MOTS_VIDES_OFFICINE }
+  );
+}
+
+/** Affecte (ou retire, avec null) l'officine actuelle d'un apprenant. */
+function setLearnerPharmacy(learnerId, pharmacyId) {
+  const actuel = stmt.getLearner.get(learnerId);
+  if (!actuel) return null;
+  stmt.setLearnerPharmacy.run({ id: learnerId, pharmacyId: pharmacyId ?? null });
+  return rowToLearner(stmt.getLearner.get(learnerId));
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -1088,4 +1449,16 @@ module.exports = {
   // 23e et 24e : le détail des réponses. Même règle, même rang.
   listQuestionStats,
   listResultAnswers,
+  // 25e à 34e : l'annuaire des officines. Même règle : ajoutées APRÈS tout ce
+  // qui précède, AU MÊME RANG dans db-memory.js, dans le même commit.
+  suggestPharmacies,
+  resolvePharmacy,
+  ensurePharmacy,
+  createPharmacy,
+  updatePharmacy,
+  getPharmacy,
+  listPharmacies,
+  mergePharmacies,
+  listDuplicatePharmacyCandidates,
+  setLearnerPharmacy,
 };

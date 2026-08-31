@@ -29,6 +29,23 @@ function formatDate(iso) {
   });
 }
 
+// Une ligne de résultat, identique que la liste soit plate ou groupée par
+// officine : le regroupement ne doit rien changer à ce qui s'affiche PAR
+// personne, seulement à l'ordre dans lequel les personnes apparaissent.
+function ligneResultat(r, cle) {
+  return (
+    <div key={cle} className="recent-row recent-row--static">
+      <span className="recent-row-body">
+        <span className="recent-row-title">{r.playerName}</span>
+        <span className="recent-row-meta">{formatDate(r.submittedAt)}</span>
+      </span>
+      <span className="tag">
+        {r.score} / {r.total}
+      </span>
+    </div>
+  );
+}
+
 /**
  * Écran « Résultats » d'UN quiz — espace formateur uniquement.
  *
@@ -117,10 +134,11 @@ function QuizResults() {
     if (!detail || detail.results.length === 0) return;
     const echappe = (v) => `"${String(v).replace(/"/g, '""')}"`;
     const lignes = [
-      ['Apprenant', 'Score', 'Sur', 'Pourcentage', 'Date'].map(echappe).join(';'),
+      ['Apprenant', 'Officine', 'Score', 'Sur', 'Pourcentage', 'Date'].map(echappe).join(';'),
       ...detail.results.map((r) =>
         [
           r.playerName,
+          r.pharmacyName || '',
           r.score,
           r.total,
           `${Math.round((r.score / r.total) * 100)}%`,
@@ -152,6 +170,31 @@ function QuizResults() {
           (detail.results.reduce((s, r) => s + r.score / r.total, 0) / detail.results.length) * 100
         )
       : null;
+
+  // Regroupement par officine. Seulement à partir de DEUX officines distinctes
+  // (une réponse sans officine compte comme un groupe) : à zéro ou une seule,
+  // le regroupement ne dirait rien de plus que la liste plate et cet écran doit
+  // rester identique à avant pour tout quiz sans officine renseignée. Aucune
+  // moyenne par officine n'est calculée ici : ce n'est pas un tableau
+  // comparatif entre officines, seulement un moyen de s'y retrouver.
+  const groupesOfficine = (() => {
+    if (!detail || detail.results.length === 0) return null;
+    const cles = new Set(detail.results.map((r) => r.pharmacyName || ''));
+    if (cles.size < 2) return null;
+    const parGroupe = new Map();
+    detail.results.forEach((r) => {
+      const cle = r.pharmacyName || '';
+      if (!parGroupe.has(cle)) parGroupe.set(cle, []);
+      parGroupe.get(cle).push(r);
+    });
+    // « Sans officine » toujours en dernier ; le reste par ordre alphabétique.
+    return [...parGroupe.entries()].sort(([a], [b]) => {
+      if (!a && !b) return 0;
+      if (!a) return 1;
+      if (!b) return -1;
+      return a.localeCompare(b, 'fr');
+    });
+  })();
 
   return (
     <div className="stack">
@@ -219,19 +262,25 @@ function QuizResults() {
               <h2>Personne n’a encore répondu</h2>
               <p>Partagez le lien ou faites scanner le QR code, puis revenez sur cet écran.</p>
             </div>
-          ) : (
-            <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
-              {detail.results.map((r, i) => (
-                <div key={i} className="recent-row recent-row--static">
-                  <span className="recent-row-body">
-                    <span className="recent-row-title">{r.playerName}</span>
-                    <span className="recent-row-meta">{formatDate(r.submittedAt)}</span>
-                  </span>
-                  <span className="tag">
-                    {r.score} / {r.total}
-                  </span>
+          ) : groupesOfficine ? (
+            <>
+              {groupesOfficine.map(([cle, resultats]) => (
+                <div
+                  key={cle || ' '}
+                  className="stack--tight"
+                  style={{ display: 'flex', flexDirection: 'column' }}
+                >
+                  <h2 className="eyebrow">
+                    {cle || 'Sans officine'} · {resultats.length} réponse
+                    {resultats.length > 1 ? 's' : ''}
+                  </h2>
+                  {resultats.map((r, i) => ligneResultat(r, `${cle}-${i}`))}
                 </div>
               ))}
+            </>
+          ) : (
+            <div className="stack--tight" style={{ display: 'flex', flexDirection: 'column' }}>
+              {detail.results.map((r, i) => ligneResultat(r, i))}
             </div>
           )}
 

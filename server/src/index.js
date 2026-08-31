@@ -508,7 +508,7 @@ app.post('/api/quiz/:id/submit', (req, res) => {
     return res.status(404).json({ error: 'Quiz introuvable' });
   }
 
-  const { playerName, answers } = req.body;
+  const { playerName, pharmacyName, answers } = req.body;
   if (!playerName || !answers) {
     return res.status(400).json({ error: 'Nom et réponses requis' });
   }
@@ -606,12 +606,38 @@ app.post('/api/quiz/:id/submit', (req, res) => {
   // adoptée, et si elle dormait en quarantaine (import), elle est promue.
   const { learner: fiche } = store.ensureLearner(nomSaisi);
 
+  // L'officine est FACULTATIVE ici, côté serveur — l'obligation vit côté client
+  // (règle « aucun appel réseau ne précède le début du quiz »). Une session en
+  // vol au moment d'un déploiement n'a pas ce champ dans sa reprise depuis
+  // localStorage ; lui opposer un 400 enfermerait l'apprenant avec ses réponses
+  // et aucune porte de sortie. Absente ou vide → tout reste à null, exactement
+  // comme avant l'existence de cette colonne.
+  //
+  // Même garde-fou que pour le nom : une chaîne de ponctuation pure donnerait
+  // une clé vide, qui capterait ensuite toute saisie vide suivante.
+  const officineSaisie = String(pharmacyName || '').trim();
+  let pharmacyId = null;
+  let pharmacyNameFigee = null;
+  if (nameKey(officineSaisie)) {
+    const { pharmacy } = store.ensurePharmacy(officineSaisie);
+    pharmacyId = pharmacy.id;
+    // pharmacy_name est la graphie TAPÉE ce jour-là, pas pharmacy.displayName :
+    // même doctrine que player_name, qui n'est pas non plus fiche.displayName.
+    pharmacyNameFigee = officineSaisie;
+    // L'officine ACTUELLE de la fiche suit la dernière participation — décision
+    // explicite : qui change d'officine y est rattaché désormais, ses anciens
+    // résultats restant à l'ancienne via pharmacy_name.
+    store.setLearnerPharmacy(fiche.id, pharmacyId);
+  }
+
   store.addResult(req.params.id, {
     playerName: nomSaisi,
     score,
     total: quiz.questions.length,
     submittedAt: new Date().toISOString(),
     learnerId: fiche.id,
+    pharmacyId,
+    pharmacyName: pharmacyNameFigee,
     detail,
   });
 
@@ -731,7 +757,10 @@ function requireAnnuaire(req, res, next) {
 // Seau à jetons par IP : 20 d'avance, 2 par seconde ensuite. Un apprenant tape
 // son nom en quelques frappes et n'en verra jamais le bord ; un script qui
 // balaie l'alphabet le touche en une seconde.
-const SEAU_CAPACITE = 20;
+// 30 et non 20 depuis l'ajout de l'officine : chaque apprenant fait désormais
+// tourner DEUX champs assistés au lieu d'un, et une salle de formation entière
+// partage souvent une seule IP publique (4G, box de l'officine).
+const SEAU_CAPACITE = 30;
 const SEAU_RECHARGE_PAR_SECONDE = 2;
 // La Map est elle-même un vecteur de saturation : une IP par requête forgée, et
 // c'est la mémoire du serveur qui tombe au lieu de l'annuaire. Au-delà de ce
@@ -784,6 +813,17 @@ function consommerJeton(ip) {
 // évaluations — elle n'est simplement pas suggérée.
 const CLE_SUGGESTION = /^[a-z][a-z ]*$/;
 
+// Officines : les chiffres sont STRUCTURANTS dans les enseignes ivoiriennes
+// (« des 2 Plateaux », « 220 Logements », « du 7e Arrondissement ») et peuvent
+// ouvrir le nom. Réutiliser CLE_SUGGESTION rendrait { suggestions: [] } avec un
+// 200 — un échec parfaitement muet, personne ne le remarquerait. Une officine
+// n'est pas une personne : sa confidentialité n'a pas le même rang, ses
+// chiffres si.
+//
+// NE PAS toucher à CLE_SUGGESTION pour les personnes : refuser les chiffres y
+// est un choix anti-énumération assumé (voir son commentaire), pas un oubli.
+const CLE_SUGGESTION_OFFICINE = /^[a-z0-9][a-z0-9 ]*$/;
+
 // Trois caractères minimum. À deux, les ~676 bigrammes couvrent tout l'espace
 // alphabétique : quelques centaines de requêtes suffiraient à reconstituer
 // l'annuaire complet. À trois, l'espace est deux ordres de grandeur plus grand
@@ -792,7 +832,14 @@ const SUGGESTION_MIN = 3;
 const SUGGESTION_MAX = 5;
 
 /**
- * GET /api/learners/suggest — PUBLIQUE.
+ * Fabrique des routes publiques de suggestion. UNE fabrique, donc UN seul
+ * seau : `consommerJeton` est capturé par fermeture sur la Map `seaux`
+ * ci-dessus, PARTAGÉE par toutes les routes qu'elle produit.
+ *
+ * ⛔ NE JAMAIS recopier le corps de cette route pour une seconde entité :
+ * chaque visiteur disposerait alors de DEUX budgets de jetons au lieu d'un, et
+ * la surface d'énumération doublerait sans qu'aucun test ni aucun journal ne
+ * le dise.
  *
  * Réponse toujours { suggestions: [...] }, un tableau de CHAÎNES : ni
  * identifiant, ni moyenne, ni date, ni provenance. 200 dans tous les cas
@@ -800,34 +847,48 @@ const SUGGESTION_MAX = 5;
  * oracle : « ce quiz existe mais il est fermé », « ce préfixe est invalide ».
  * Un tableau vide ne dit rien de plus que l'absence de réponse.
  */
-app.get('/api/learners/suggest', (req, res) => {
-  // Un annuaire nominatif n'a rien à faire dans un cache partagé.
-  res.setHeader('Cache-Control', 'no-store');
+function routeSuggestion({ suggerer, cleValide }) {
+  return (req, res) => {
+    // Un annuaire nominatif n'a rien à faire dans un cache partagé.
+    res.setHeader('Cache-Control', 'no-store');
 
-  if (!consommerJeton(req.ip || 'inconnue')) {
-    return res
-      .status(429)
-      .json({ error: 'Trop de requêtes. Patientez quelques secondes avant de reprendre.' });
-  }
+    if (!consommerJeton(req.ip || 'inconnue')) {
+      return res
+        .status(429)
+        .json({ error: 'Trop de requêtes. Patientez quelques secondes avant de reprendre.' });
+    }
 
-  const vide = { suggestions: [] };
+    const vide = { suggestions: [] };
 
-  // Contrôles de la saisie d'abord : ils ne coûtent aucune lecture de base.
-  const cle = nameKey(req.query.q);
-  if (cle.length < SUGGESTION_MIN) return res.json(vide);
-  if (!CLE_SUGGESTION.test(cle)) return res.json(vide);
+    // Contrôles de la saisie d'abord : ils ne coûtent aucune lecture de base.
+    const cle = nameKey(req.query.q);
+    if (cle.length < SUGGESTION_MIN) return res.json(vide);
+    if (!cleValide.test(cle)) return res.json(vide);
 
-  // Le quiz est la clé de la porte. Sonder l'annuaire suppose de détenir un lien
-  // de quiz VIVANT : quand le formateur ferme le quiz ou le laisse expirer, la
-  // surface d'exposition disparaît d'elle-même, sans intervention.
-  const quizId = typeof req.query.quizId === 'string' ? req.query.quizId : '';
-  if (!quizId) return res.json(vide);
+    // Le quiz est la clé de la porte. Sonder l'annuaire suppose de détenir un
+    // lien de quiz VIVANT : quand le formateur ferme le quiz ou le laisse
+    // expirer, la surface d'exposition disparaît d'elle-même, sans intervention.
+    const quizId = typeof req.query.quizId === 'string' ? req.query.quizId : '';
+    if (!quizId) return res.json(vide);
 
-  const quiz = store.getQuiz(quizId);
-  if (!quiz || !quizAvailability(quiz).ok) return res.json(vide);
+    const quiz = store.getQuiz(quizId);
+    if (!quiz || !quizAvailability(quiz).ok) return res.json(vide);
 
-  res.json({ suggestions: store.suggestLearners(cle, SUGGESTION_MAX) });
-});
+    res.json({ suggestions: suggerer(cle, SUGGESTION_MAX) });
+  };
+}
+
+app.get(
+  '/api/learners/suggest',
+  routeSuggestion({ suggerer: (c, n) => store.suggestLearners(c, n), cleValide: CLE_SUGGESTION })
+);
+app.get(
+  '/api/pharmacies/suggest',
+  routeSuggestion({
+    suggerer: (c, n) => store.suggestPharmacies(c, n),
+    cleValide: CLE_SUGGESTION_OFFICINE,
+  })
+);
 
 /**
  * Site UNIQUE d'arrondi des moyennes. Les deux stores renvoient des flottants
@@ -895,6 +956,8 @@ app.get('/api/learners', requireAnnuaire, requireAdmin, (req, res) => {
       createdBy: l.createdBy,
       suggestible: l.suggestible,
       createdAt: l.createdAt,
+      pharmacyId: l.pharmacyId,
+      pharmacyName: l.pharmacyName,
       attempts: l.attempts,
       avgPercent: arrondirPourcent(l.avgPercent),
       lastSubmittedAt: l.lastSubmittedAt,
@@ -1001,18 +1064,39 @@ app.patch('/api/learners/:id', requireAnnuaire, requireAdmin, (req, res) => {
 
   if (typeof corps.suggestible === 'boolean') patch.suggestible = corps.suggestible;
 
-  if (!Object.keys(patch).length) {
+  // pharmacyId est traité À PART de `patch` (destiné à updateLearner) : c'est
+  // une écriture sur une colonne différente, via setLearnerPharmacy, qui ne
+  // recalcule aucune clé de nom. `null` retire l'affectation.
+  const affecteOfficine = 'pharmacyId' in corps;
+  let pharmacyId = null;
+  if (affecteOfficine) {
+    pharmacyId = corps.pharmacyId === null ? null : String(corps.pharmacyId || '').trim();
+    // Un identifiant fautif orphelinerait la fiche EN SILENCE : elle
+    // pointerait une officine qui n'existe pas, invisible jusqu'à ce qu'un
+    // écran tente de l'afficher. On vérifie ici, avant d'écrire.
+    if (pharmacyId && !store.getPharmacy(pharmacyId)) {
+      return res.status(404).json({ error: 'Officine introuvable' });
+    }
+  }
+
+  if (!Object.keys(patch).length && !affecteOfficine) {
     return res.status(400).json({
-      error: 'Rien à modifier : indiquez un nom (displayName) ou une visibilité (suggestible).',
+      error:
+        'Rien à modifier : indiquez un nom (displayName), une visibilité (suggestible) ' +
+        'ou une officine (pharmacyId).',
     });
   }
 
   try {
     // Un renommage recalcule la clé de nom et ne touche AUCUNE ligne de results :
     // l'historique conserve le nom tel qu'il a été tapé le jour de l'évaluation.
-    const learner = store.updateLearner(req.params.id, patch);
+    const learner = Object.keys(patch).length
+      ? store.updateLearner(req.params.id, patch)
+      : store.getLearner(req.params.id);
     if (!learner) return res.status(404).json({ error: 'Apprenant introuvable' });
-    res.json({ learner });
+
+    const final = affecteOfficine ? store.setLearnerPharmacy(req.params.id, pharmacyId) : learner;
+    res.json({ learner: final });
   } catch (err) {
     if (err.code === 'DUPLICATE') {
       return res.status(409).json({ error: err.message, learner: err.learner });
@@ -1048,6 +1132,105 @@ app.post('/api/learners/:id/merge', requireAnnuaire, requireAdmin, (req, res) =>
   const { moved } = store.mergeLearners(sourceId, intoId);
   console.log(`Fusion d'apprenants : ${sourceId} -> ${intoId} (${moved} évaluation(s))`);
   res.json({ moved });
+});
+
+// =============================================================================
+// Annuaire des officines — copie fonctionnelle du bloc apprenants ci-dessus.
+// Même verrou (requireAnnuaire), même discipline d'ordre de déclaration.
+// =============================================================================
+
+// ⚠️ DÉCLARÉE AVANT /api/pharmacies/:id (implicite dans les routes suivantes) :
+// « doublons » est un segment LITTÉRAL qu'un `:id` capterait s'il passait avant.
+app.get('/api/pharmacies/doublons', requireAnnuaire, requireAdmin, (req, res) => {
+  res.json({ groupes: store.listDuplicatePharmacyCandidates(), stockage: etatStockage() });
+});
+
+app.get('/api/pharmacies', requireAnnuaire, requireAdmin, (req, res) => {
+  res.json({ pharmacies: store.listPharmacies(), stockage: etatStockage() });
+});
+
+app.post('/api/pharmacies', requireAnnuaire, requireAdmin, (req, res) => {
+  const brut = req.body && req.body.displayName;
+  const displayName = typeof brut === 'string' ? brut.trim() : '';
+
+  if (!displayName) {
+    return res.status(400).json({ error: 'Le nom de l’officine est obligatoire.' });
+  }
+  if (!nameKey(displayName)) {
+    return res.status(400).json({ error: 'Ce nom ne contient aucune lettre exploitable.' });
+  }
+
+  try {
+    const { pharmacy } = store.createPharmacy(displayName);
+    res.status(201).json({ pharmacy });
+  } catch (err) {
+    if (err.code === 'DUPLICATE') {
+      return res.status(409).json({ error: err.message, pharmacy: err.pharmacy });
+    }
+    throw err;
+  }
+});
+
+app.patch('/api/pharmacies/:id', requireAnnuaire, requireAdmin, (req, res) => {
+  const existant = store.getPharmacy(req.params.id);
+  if (!existant) return res.status(404).json({ error: 'Officine introuvable' });
+
+  const corps = req.body || {};
+  const patch = {};
+
+  if (typeof corps.displayName === 'string') {
+    const displayName = corps.displayName.trim();
+    if (!displayName || !nameKey(displayName)) {
+      return res.status(400).json({ error: 'Ce nom ne contient aucune lettre exploitable.' });
+    }
+    patch.displayName = displayName;
+  }
+
+  if (typeof corps.suggestible === 'boolean') patch.suggestible = corps.suggestible;
+
+  if (!Object.keys(patch).length) {
+    return res.status(400).json({
+      error: 'Rien à modifier : indiquez un nom (displayName) ou une visibilité (suggestible).',
+    });
+  }
+
+  try {
+    const pharmacy = store.updatePharmacy(req.params.id, patch);
+    if (!pharmacy) return res.status(404).json({ error: 'Officine introuvable' });
+    res.json({ pharmacy });
+  } catch (err) {
+    if (err.code === 'DUPLICATE') {
+      return res.status(409).json({ error: err.message, pharmacy: err.pharmacy });
+    }
+    throw err;
+  }
+});
+
+// Fusion : déplace les apprenants ET les participations, jamais
+// results.pharmacy_name — la graphie figée du jour ne se réécrit jamais.
+app.post('/api/pharmacies/:id/merge', requireAnnuaire, requireAdmin, (req, res) => {
+  const sourceId = req.params.id;
+  const brut = req.body && req.body.intoId;
+  const intoId = typeof brut === 'string' ? brut.trim() : '';
+
+  if (!intoId) {
+    return res.status(400).json({ error: 'Indiquez l’officine à conserver (intoId).' });
+  }
+  if (intoId === sourceId) {
+    return res.status(400).json({ error: 'Une officine ne peut pas être fusionnée avec elle-même.' });
+  }
+  if (!store.getPharmacy(sourceId)) {
+    return res.status(404).json({ error: 'Officine introuvable' });
+  }
+  if (!store.getPharmacy(intoId)) {
+    return res.status(404).json({ error: 'Officine de destination introuvable' });
+  }
+
+  const { movedLearners, movedResults } = store.mergePharmacies(sourceId, intoId);
+  console.log(
+    `Fusion d'officines : ${sourceId} -> ${intoId} (${movedLearners} apprenant(s), ${movedResults} participation(s))`
+  );
+  res.json({ movedLearners, movedResults });
 });
 
 // SPA fallback — serve index.html for all non-API routes

@@ -24,11 +24,14 @@ const { nameKey, motsDeCle } = require('./name-key');
 const { newId } = require('./ids');
 const { fusionnerSuggestions } = require('./suggestion');
 const { groupesProbables } = require('./similarite');
+const { MOTS_VIDES_OFFICINE } = require('./mots-vides-officine');
 
 const quizzes = new Map();
 const results = new Map(); // quizId -> tableau de participations
 const learners = new Map(); // id -> fiche d'apprenant
 const learnersByKey = new Map(); // nameKey -> id, l'unicité rendue structurelle
+const pharmacies = new Map(); // id -> fiche d'officine
+const pharmaciesByKey = new Map(); // nameKey -> id
 
 // Équivalent du AUTOINCREMENT de results.id : l'historique d'un apprenant
 // renvoie un resultId, il faut donc que chaque participation en porte un.
@@ -47,10 +50,30 @@ const ephemeralReason = 'le stockage SQLite n’a pas pu être chargé (voir l�
 function toResult(entry) {
   return {
     playerName: entry.playerName,
+    pharmacyName: entry.pharmacyName ?? null,
     score: entry.score,
     total: entry.total,
     submittedAt: entry.submittedAt,
   };
+}
+
+/**
+ * Les suffixes d'une clé, un par mot NON INITIAL — équivalent mémoire du motif
+ * GLOB « * xxx* » de db.js.
+ *
+ * ⚠️ Un seul mot ne suffit pas : GLOB '* des 2 pl*' cherche l'apparition de LA
+ * CHAÎNE « des 2 pl » après un espace, pas un mot unique qui commencerait par
+ * elle. Un préfixe à plusieurs mots (« des 2 pl ») ne peut donc JAMAIS être
+ * trouvé par un simple `mot.startsWith(prefix)` : aucun mot pris seul ne
+ * contient d'espace. Il faut comparer contre le reste de la clé À PARTIR de
+ * chaque mot, espaces compris — exactement ce que fait un GLOB sur la chaîne
+ * entière.
+ */
+function suffixesInternes(cle) {
+  const mots = motsDeCle(cle);
+  const suffixes = [];
+  for (let i = 1; i < mots.length; i += 1) suffixes.push(mots.slice(i).join(' '));
+  return suffixes;
 }
 
 /** Copie défensive d'une fiche : personne ne mute le store par mégarde. */
@@ -58,6 +81,7 @@ function toLearner(learner) {
   if (!learner) return null;
   return {
     id: learner.id,
+    pharmacyId: learner.pharmacyId ?? null,
     displayName: learner.displayName,
     nameKey: learner.nameKey,
     createdAt: learner.createdAt,
@@ -177,6 +201,11 @@ function addResult(quizId, result) {
     // `?? null` explicite : une participation sans fiche reste possible, et
     // undefined dans une Map ne se distingue pas d'une clé absente.
     learnerId: result.learnerId ?? null,
+    // pharmacyName est la graphie du JOUR, FIGÉE — l'analogue de playerName.
+    // pharmacyId sert au regroupement ; ni l'un ni l'autre ne se réécrit si
+    // l'officine est renommée ou fusionnée ensuite.
+    pharmacyId: result.pharmacyId ?? null,
+    pharmacyName: result.pharmacyName ?? null,
     detail: (Array.isArray(result.detail) ? result.detail : []).map((r) => ({
       questionIndex: r.questionIndex,
       questionText: r.questionText,
@@ -301,11 +330,7 @@ function suggestLearners(prefixKey, limit) {
   // Le NOT GLOB @debut de db.js : on exclut ce que la première famille rend
   // déjà, pour que les deux listes arrivent disjointes à la fusion.
   const enMilieu = proposables.filter(
-    (l) =>
-      !l.nameKey.startsWith(prefix) &&
-      motsDeCle(l.nameKey)
-        .slice(1)
-        .some((mot) => mot.startsWith(prefix))
+    (l) => !l.nameKey.startsWith(prefix) && suffixesInternes(l.nameKey).some((s) => s.startsWith(prefix))
   );
 
   return fusionnerSuggestions(
@@ -433,6 +458,10 @@ function listLearners({ from = null, to = null } = {}) {
         createdAt: l.createdAt,
         createdBy: l.createdBy,
         suggestible: Boolean(l.suggestible),
+        pharmacyId: l.pharmacyId ?? null,
+        // L'officine ACTUELLE de la fiche, indépendante de la période :
+        // même équivalence que le LEFT JOIN pharmacies de db.js.
+        pharmacyName: l.pharmacyId ? (pharmacies.get(l.pharmacyId)?.displayName ?? null) : null,
         attempts: s ? s.attempts : 0,
         // AVG sur zéro ligne rend NULL en SQL : ici null, jamais 0 — qui se
         // lirait « il a eu zéro » — et jamais NaN.
@@ -461,6 +490,7 @@ function listLearnerHistory(learnerId, { from = null, to = null } = {}) {
       quizId,
       quizTitle: quiz ? quiz.title : null,
       playerName: entry.playerName,
+      pharmacyName: entry.pharmacyName ?? null,
       score: entry.score,
       total: entry.total,
       submittedAt: entry.submittedAt,
@@ -548,6 +578,200 @@ function listDuplicateCandidates() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Annuaire des officines — copie fonctionnelle du bloc apprenants ci-dessus.
+// ---------------------------------------------------------------------------
+
+/** Copie défensive d'une fiche d'officine. Mêmes champs que toLearner, sans pharmacyId. */
+function toPharmacy(pharmacy) {
+  if (!pharmacy) return null;
+  return {
+    id: pharmacy.id,
+    displayName: pharmacy.displayName,
+    nameKey: pharmacy.nameKey,
+    createdAt: pharmacy.createdAt,
+    createdBy: pharmacy.createdBy,
+    suggestible: Boolean(pharmacy.suggestible),
+  };
+}
+
+function duplicatePharmacyError(existing) {
+  const err = new Error(`Une officine nommée « ${existing.displayName} » existe déjà.`);
+  err.code = 'DUPLICATE';
+  err.pharmacy = toPharmacy(existing);
+  return err;
+}
+
+function insertPharmacy(displayName, key, createdBy) {
+  const pharmacy = {
+    id: newId(),
+    displayName,
+    nameKey: key,
+    createdAt: new Date().toISOString(),
+    createdBy,
+    suggestible: true,
+  };
+  pharmacies.set(pharmacy.id, pharmacy);
+  pharmaciesByKey.set(key, pharmacy.id);
+  return toPharmacy(pharmacy);
+}
+
+/** Copie de suggestLearners. */
+function suggestPharmacies(prefixKey, limit) {
+  const prefix = String(prefixKey ?? '');
+  if (!prefix) return [];
+
+  const max = Number.isInteger(limit) && limit > 0 ? limit : 8;
+
+  const proposables = [...pharmacies.values()]
+    .filter((p) => p.suggestible)
+    .sort((a, b) => compareKeys(a.nameKey, b.nameKey));
+
+  const enTete = proposables.filter((p) => p.nameKey.startsWith(prefix));
+  const enMilieu = proposables.filter(
+    (p) => !p.nameKey.startsWith(prefix) && suffixesInternes(p.nameKey).some((s) => s.startsWith(prefix))
+  );
+
+  return fusionnerSuggestions(
+    enTete.slice(0, max).map((p) => p.displayName),
+    enMilieu.slice(0, max).map((p) => p.displayName),
+    max
+  );
+}
+
+/** Copie de resolveLearner. */
+function resolvePharmacy(name) {
+  const id = pharmaciesByKey.get(nameKey(name));
+  return id === undefined ? null : toPharmacy(pharmacies.get(id));
+}
+
+/** Copie de ensureLearner. */
+function ensurePharmacy(name) {
+  const displayName = String(name ?? '').trim();
+  const key = nameKey(displayName);
+
+  if (pharmaciesByKey.has(key)) {
+    const pharmacy = pharmacies.get(pharmaciesByKey.get(key));
+    if (!pharmacy.suggestible) pharmacy.suggestible = true;
+    return { pharmacy: toPharmacy(pharmacy), created: false };
+  }
+
+  return { pharmacy: insertPharmacy(displayName, key, 'learner'), created: true };
+}
+
+/** Copie de createLearner. */
+function createPharmacy(displayName) {
+  const name = String(displayName ?? '').trim();
+  const key = nameKey(name);
+
+  if (pharmaciesByKey.has(key)) throw duplicatePharmacyError(pharmacies.get(pharmaciesByKey.get(key)));
+
+  return { pharmacy: insertPharmacy(name, key, 'trainer') };
+}
+
+/** Copie de updateLearner. */
+function updatePharmacy(id, patch) {
+  const pharmacy = pharmacies.get(id);
+  if (!pharmacy) return null;
+
+  if ('displayName' in patch) {
+    const displayName = String(patch.displayName ?? '').trim();
+    const key = nameKey(displayName);
+    const holder = pharmaciesByKey.get(key);
+    if (holder !== undefined && holder !== id) throw duplicatePharmacyError(pharmacies.get(holder));
+
+    pharmaciesByKey.delete(pharmacy.nameKey);
+    pharmacy.displayName = displayName;
+    pharmacy.nameKey = key;
+    pharmaciesByKey.set(key, id);
+  }
+
+  if ('suggestible' in patch) pharmacy.suggestible = Boolean(patch.suggestible);
+
+  return toPharmacy(pharmacy);
+}
+
+function getPharmacy(id) {
+  return toPharmacy(pharmacies.get(id));
+}
+
+/** attempts = nombre d'APPRENANTS rattachés, comme le COUNT(l.id) de db.js. */
+function listPharmacies() {
+  const compte = new Map();
+  for (const l of learners.values()) {
+    if (!l.pharmacyId) continue;
+    compte.set(l.pharmacyId, (compte.get(l.pharmacyId) || 0) + 1);
+  }
+  return [...pharmacies.values()]
+    .sort((a, b) => compareKeys(a.nameKey, b.nameKey))
+    .map((p) => ({
+      id: p.id,
+      displayName: p.displayName,
+      createdAt: p.createdAt,
+      createdBy: p.createdBy,
+      suggestible: Boolean(p.suggestible),
+      attempts: compte.get(p.id) || 0,
+    }));
+}
+
+/**
+ * Fusionne deux fiches d'officine : déplace les apprenants ET les résultats
+ * rattachés, jamais results.pharmacyName (la graphie figée du jour).
+ */
+function mergePharmacies(sourceId, intoId) {
+  if (!sourceId || !intoId || sourceId === intoId) return { movedLearners: 0, movedResults: 0 };
+  const source = pharmacies.get(sourceId);
+  if (!source || !pharmacies.has(intoId)) return { movedLearners: 0, movedResults: 0 };
+
+  let movedLearners = 0;
+  for (const l of learners.values()) {
+    if (l.pharmacyId !== sourceId) continue;
+    l.pharmacyId = intoId;
+    movedLearners += 1;
+  }
+
+  let movedResults = 0;
+  for (const { entry } of allEntries()) {
+    if (entry.pharmacyId !== sourceId) continue;
+    entry.pharmacyId = intoId;
+    movedResults += 1;
+  }
+
+  pharmaciesByKey.delete(source.nameKey);
+  pharmacies.delete(sourceId);
+  return { movedLearners, movedResults };
+}
+
+/** Copie de listDuplicateCandidates, avec les mots vides d'officine injectés. */
+function listDuplicatePharmacyCandidates() {
+  const compte = new Map();
+  for (const l of learners.values()) {
+    if (!l.pharmacyId) continue;
+    compte.set(l.pharmacyId, (compte.get(l.pharmacyId) || 0) + 1);
+  }
+  return groupesProbables(
+    [...pharmacies.values()]
+      .sort((a, b) => compareKeys(a.nameKey, b.nameKey))
+      .map((p) => ({
+        id: p.id,
+        displayName: p.displayName,
+        nameKey: p.nameKey,
+        createdBy: p.createdBy,
+        suggestible: Boolean(p.suggestible),
+        attempts: compte.get(p.id) || 0,
+      })),
+    { motsVides: MOTS_VIDES_OFFICINE }
+  );
+}
+
+/** Affecte (ou retire, avec null) l'officine actuelle d'un apprenant. */
+function setLearnerPharmacy(learnerId, pharmacyId) {
+  const learner = learners.get(learnerId);
+  if (!learner) return null;
+  learner.pharmacyId = pharmacyId ?? null;
+  return toLearner(learner);
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -575,4 +799,15 @@ module.exports = {
   listDuplicateCandidates,
   listQuestionStats,
   listResultAnswers,
+  // 25e à 34e : l'annuaire des officines, au MÊME RANG que dans db.js.
+  suggestPharmacies,
+  resolvePharmacy,
+  ensurePharmacy,
+  createPharmacy,
+  updatePharmacy,
+  getPharmacy,
+  listPharmacies,
+  mergePharmacies,
+  listDuplicatePharmacyCandidates,
+  setLearnerPharmacy,
 };

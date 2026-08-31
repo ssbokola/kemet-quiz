@@ -177,11 +177,16 @@ function ApprenantHistorique({ apprenant, onRetour }) {
   const exporter = () => {
     if (!historique || historique.evaluations.length === 0) return;
     const echappe = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    // Officine : la graphie du JOUR, figée sur chaque évaluation — voir
+    // pharmacyName dans listLearnerHistory. Deux lignes du même apprenant
+    // peuvent donc montrer deux officines différentes s'il en a changé entre
+    // temps ; c'est voulu, pas une incohérence à corriger.
     const lignes = [
-      ['Quiz', 'Score', 'Sur', 'Pourcentage', 'Date'].map(echappe).join(';'),
+      ['Quiz', 'Officine', 'Score', 'Sur', 'Pourcentage', 'Date'].map(echappe).join(';'),
       ...historique.evaluations.map((ev) =>
         [
           ev.quizTitle,
+          ev.pharmacyName || '',
           ev.score,
           ev.total,
           `${Math.round(ev.percent)}%`,
