@@ -3,8 +3,8 @@
 **Dernière mise à jour :** 31 août 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit :** `8163b36` — *Rattacher chaque apprenant a une officine : saisie libre, anti-doublons, regroupement*
-**Tout est commité et en ligne.** Depuis la mise à jour du 28/08 (§12), deux chantiers de plus ont été livrés et déployés : le détail des réponses par question (§13) et le rattachement à une officine (§14).
+**Dernier commit déployé :** `de29cdc` — *Naviguer depuis une officine : tous ses resultats, filtrables et exportables* (§15)
+**Non encore déployé à cette mise à jour :** les sauvegardes automatiques (§16) — code écrit et vérifié, en attente du feu vert pour le push. Depuis la mise à jour du 28/08 (§12), quatre chantiers de plus ont été livrés : le détail des réponses (§13), le rattachement à une officine (§14), la navigation depuis une officine (§15) et les sauvegardes automatiques (§16, ci-dessus).
 
 ---
 
@@ -79,6 +79,7 @@ kemet-quizz/
 │       │   ├── Officines.jsx        formateur : annuaire des officines (créer, rechercher)
 │       │   ├── FicheOfficine.jsx    formateur : renommer, fusionner une officine
 │       │   ├── AffecterOfficines.jsx formateur : rattacher en masse les fiches sans officine
+│       │   ├── OfficineHistorique.jsx formateur : résultats d'une officine, tous quiz confondus
 │       │   ├── Welcome.jsx          accueil apprenant, DEUX étapes : nom, puis officine
 │       │   ├── Quiz.jsx             passation, thème encre
 │       │   └── Results.jsx          score, correction, export PDF
@@ -99,7 +100,8 @@ kemet-quizz/
         ├── name-key.js       normalisation des noms — décide de l'IDENTITÉ
         ├── suggestion.js     fusion des deux familles de correspondance, quota compris
         ├── similarite.js     rapprochement de fiches — PROPOSE, ne décide jamais
-        └── mots-vides-officine.js  mots à ignorer pour juger si une officine est un doublon (§14)
+        ├── mots-vides-officine.js  mots à ignorer pour juger si une officine est un doublon (§14)
+        └── sauvegarde.js     sauvegardes SQLite périodiques, VACUUM INTO (§16)
     scripts/
         └── migration-inverse.js  outil d'urgence, jamais lancé automatiquement
     test/
@@ -186,7 +188,7 @@ Motif historique : les gros PDF provoquaient des `502` (`Request aborted` dans m
 
 ### Stockage
 
-Tout passe par `server/src/db.js`, qui expose **34 fonctions** — les quiz et les résultats, l'annuaire d'apprenants, le détail des réponses (§13 : `listQuestionStats`, `listResultAnswers`) et depuis le 31/08 l'annuaire des officines (§14 : `suggestPharmacies`, `resolvePharmacy`, `ensurePharmacy`, `createPharmacy`, `updatePharmacy`, `getPharmacy`, `listPharmacies`, `mergePharmacies`, `listDuplicatePharmacyCandidates`, `setLearnerPharmacy`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 34 fonctions, **dans le même ordre** — c'est `parite.test.js` qui le garantit à chaque ajout.
+Tout passe par `server/src/db.js`, qui expose **35 fonctions** — les quiz et les résultats, l'annuaire d'apprenants, le détail des réponses (§13 : `listQuestionStats`, `listResultAnswers`), l'annuaire des officines (§14 : `suggestPharmacies`, `resolvePharmacy`, `ensurePharmacy`, `createPharmacy`, `updatePharmacy`, `getPharmacy`, `listPharmacies`, `mergePharmacies`, `listDuplicatePharmacyCandidates`, `setLearnerPharmacy`) et depuis le 31/08 les résultats d'une officine tous quiz confondus (§15 : `listPharmacyHistory`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 35 fonctions, **dans le même ordre** — c'est `parite.test.js` qui le garantit à chaque ajout. `server/src/sauvegarde.js` (§16) fait délibérément EXCEPTION à ce compte : il n'ajoute rien aux exports de l'un ou l'autre store, précisément pour ne courir aucun risque sur cette parité.
 
 Cinq tables :
 
@@ -198,7 +200,7 @@ Cinq tables :
 | `pharmacies` | une officine par ligne, mêmes 6 colonnes que `learners` (`display_name`, `name_key` unique, `created_at`, `created_by`, `suggestible`) |
 | `answers` | le détail par question d'une participation — voir §13 |
 
-Index : `idx_results_quiz`, `idx_results_name`, `idx_learners_key` (UNIQUE), `idx_results_learner_date`, `idx_pharmacies_key` (UNIQUE), `idx_results_pharmacy` et `idx_learners_pharmacy`.
+Index : `idx_results_quiz`, `idx_results_name`, `idx_learners_key` (UNIQUE), `idx_results_learner_date`, `idx_pharmacies_key` (UNIQUE), `idx_results_pharmacy`, `idx_learners_pharmacy` et `idx_results_pharmacy_date` (§15).
 
 `node:sqlite` (`DatabaseSync`) est **synchrone**. `POST /api/quiz/:id/submit` est resté synchrone de bout en bout — c'est ce qui compte : son cycle lecture → vérification → écriture (la règle de tentative unique) ne peut pas être entrelacé avec une autre requête, aucune transaction n'y est donc nécessaire. Deux gestionnaires sont néanmoins `async` (`upload-pdf` et `regenerate`, qui attendent le modèle), et `db.js` porte **deux transactions explicites** en `BEGIN IMMEDIATE` / `COMMIT` avec `ROLLBACK` : le backfill de migration et la fusion de deux fiches.
 
@@ -382,9 +384,12 @@ Push sur `main` → Railway lance `postinstall` (installe serveur + client, buil
 
 SQLite est un fichier posé sur un volume, et un volume Railway ne se monte que sur **une** instance. Passer le service à plusieurs répliques corromprait la base. Si la charge l'exigeait un jour, il faudrait basculer sur Postgres — le point de bascule est petit, tout l'accès aux données est déjà isolé dans `db.js`.
 
-### Les sauvegardes sont manuelles
+### ✅ Sauvegardes automatiques — ajoutées le 31/08/2026, à activer aussi côté Railway
 
-Aucune sauvegarde automatique du fichier `.db`. Pour une copie de sûreté, passer par la CLI Railway ou un montage temporaire.
+Voir §16. Deux couches, pas redondantes :
+
+1. **Sauvegarde native du volume Railway** (Settings du service → Backups) : snapshot du volume entier, capture `.db` et `.db-wal` ensemble dans un état cohérent, protège contre la perte totale du volume. **Doit être activée à la main dans le tableau de bord** — aucune CLI ni API ne l'expose, ce n'est pas automatisable depuis ce dépôt.
+2. **`server/src/sauvegarde.js`** : un fichier `.db` autonome écrit périodiquement sur le même volume via `VACUUM INTO`, pratique pour une copie qu'un formateur peut retrouver et télécharger sans passer par les sauvegardes de Railway. Ne protège PAS contre la perte du volume — c'est le rôle de la couche 1.
 
 ### ✅ Le détail des réponses est conservé — corrigé le 28/08/2026
 
@@ -582,7 +587,7 @@ Sur ce modèle, le raisonnement est **actif par défaut** et puise dans le même
 
 ## 10. Prochain chantier
 
-**Rien n'est décidé pour l'instant.** Les deux demandes en cours au 28/08 (conserver le détail des réponses, rattacher chaque apprenant à une officine) sont livrées et en production — voir §13 et §14. Piocher dans §11 « Autres pistes » à la prochaine demande, ou attendre la prochaine remontée du terrain.
+**Rien n'est décidé pour l'instant.** Tout ce qui a été demandé jusqu'ici est livré et en production : conserver le détail des réponses (§13), rattacher chaque apprenant à une officine (§14), naviguer depuis une officine vers tous ses résultats (§15), sauvegardes automatiques (§16). Piocher dans §11 « Autres pistes » à la prochaine demande, ou attendre la prochaine remontée du terrain.
 
 ### Pièges déjà payés sur ce projet, à ne pas repayer
 
@@ -603,10 +608,9 @@ Sur ce modèle, le raisonnement est **actif par défaut** et puise dans le même
 | Tableau de bord par officine | Explicitement écarté pour l'instant par l'utilisateur (§14) — à reproposer si le besoin change | Moyen |
 | Tests automatisés côté client | Aucun aujourd'hui ; l'accessibilité se vérifie au lecteur d'écran, pas par une assertion | Moyen |
 | Auto-hébergement des polices | Performance, hors ligne | Faible |
-| Sauvegarde périodique de la base | Filet de sécurité | Faible |
 | Mode révision (réponse dévoilée à chaque question) | Usage entraînement | Faible |
 
-> Les chantiers « tableau de bord des résultats », « liste des quiz du formateur », « export CSV », « détail des réponses », « rattacher une officine » et « normaliser espaces et traits d'union dans `nameKey` » de la version précédente de ce document sont **faits** — voir §5, §8, §13 et §14.
+> Les chantiers « tableau de bord des résultats », « liste des quiz du formateur », « export CSV », « détail des réponses », « rattacher une officine », « sauvegarde périodique de la base » et « normaliser espaces et traits d'union dans `nameKey` » de la version précédente de ce document sont **faits** — voir §5, §8, §13, §14, §15 et §16.
 
 ---
 
@@ -751,3 +755,43 @@ Au moment du déploiement, **aucun apprenant n'a d'officine** : le champ est nou
 ### Ce qui reste à vérifier à l'usage
 
 Voir §9. La fusion de deux officines et l'affectation en masse n'ont pas été rejouées en production (mot de passe formateur, jamais saisi par l'assistant) — seulement en local et par script.
+
+---
+
+## 15. Naviguer depuis une officine vers tous ses résultats — livré le 31 août 2026
+
+Jusque-là l'officine ne se voyait que quiz par quiz (`QuizResults`, groupé par officine depuis §14) ou apprenant par apprenant (`ApprenantHistorique`) : aucun écran ne répondait à « tout ce que les apprenants de CETTE officine ont passé, sur une période, à exporter d'un coup ».
+
+**`OfficineHistorique.jsx`**, ouvert depuis un nouveau lien sur `FicheOfficine.jsx` (« Voir les résultats de cette officine »). Analogue de `ApprenantHistorique.jsx` mais à cheval sur plusieurs apprenants ET plusieurs quiz : chaque ligne montre donc qui a répondu ET à quel quiz, là où `ApprenantHistorique` connaît déjà l'apprenant et n'a besoin que du quiz. Même `PeriodePicker`, même export `.csv` (colonnes Apprenant, Quiz, Score, Sur, Pourcentage, Date). Pas de détail par question dépliable ici — ce n'est pas ce qui a été demandé, et l'écran par apprenant existe déjà pour ça.
+
+**Filtre sur `results.pharmacy_id`**, la graphie FIGÉE du jour de chaque participation, jamais sur l'officine actuelle des fiches apprenants : un apprenant qui a changé d'officine depuis garde ses anciennes réponses sous l'ancienne — même décision que le regroupement par officine de `QuizResults` (§14), pour la même raison.
+
+**Store :** `listPharmacyHistory`, 35ᵉ fonction des deux stores, au même rang. Nouvel index `idx_results_pharmacy_date ON results(pharmacy_id, submitted_at)` — l'analogue exact de `idx_results_learner_date`, pour la même forme de requête (une entité, une plage de dates, triée). Aucune migration de données : la colonne et son voisin `idx_results_pharmacy` existaient déjà depuis §14.
+
+**Vérifiée par un différentiel manuel** (chronologie, filtre de période, participations sans officine correctement exclues des deux côtés), pas par un nouveau test permanent — comme `listLearnerHistory` avant elle, qui n'a jamais eu ce traitement non plus.
+
+**Piège CSS évité :** le lien d'entrée sur `FicheOfficine.jsx` est posé dans un `.tag-row` séparé, pas dans le `.field-row` du titre — celui-ci porte déjà l'initiale décorative et n'a pas de `flex-wrap` (voir le correctif similaire sur `AnnuaireApprenants`, §8) ; un troisième enfant nu y aurait débordé à 375 px.
+
+---
+
+## 16. Sauvegardes automatiques — livré le 31 août 2026
+
+**Deux couches, pas redondantes.** La recherche préalable a confirmé que Railway propose depuis peu une sauvegarde **native** de volume (Settings du service → Backups), en snapshot du volume entier — elle capture `.db` et `.db-wal` ensemble, dans un état cohérent, sans rien savoir de SQLite. C'est la seule protection contre une perte **totale** du volume, et **rien de tout ça n'est automatisable depuis ce dépôt** : ni la CLI ni l'API Railway n'exposent cette fonctionnalité, elle s'active à la main dans le tableau de bord (coût proportionnel à la taille du volume, facturé par Railway). ⚠️ **Vérifier qu'elle est activée** — ce document ne peut pas le confirmer à distance.
+
+En complément, **`server/src/sauvegarde.js`** écrit périodiquement un fichier `.db` autonome sur le même volume, via `VACUUM INTO` — utile pour qu'un formateur retrouve et télécharge une copie sans passer par l'interface de Railway. Ne protège **pas** contre la perte du volume : c'est le rôle de la couche native ci-dessus, pas de celle-ci.
+
+**Pourquoi en processus, et pas un second service Railway :** ce projet tient à une seule instance/un seul service par choix documenté (§8, « Une seule instance de serveur ») ; un service séparé aurait demandé une configuration manuelle supplémentaire dans le tableau de bord pour un besoin qu'un simple minuteur couvre très bien.
+
+**Pourquoi `VACUUM INTO` et pas une copie de fichier :** le mode journal est WAL (§5) — la donnée la plus récente peut vivre dans `.db-wal`, qu'une copie brute laisserait de côté ou copierait dans un état incohérent. `VACUUM INTO` consolide WAL et fichier principal et écrit une base autonome et cohérente, quel que soit l'état du journal au moment de l'appel.
+
+**Confirmé empiriquement** (pas supposé) sur `node:sqlite` : `db.prepare('VACUUM INTO ?').run(chemin)` fonctionne avec un **paramètre lié**, y compris avec un chemin de destination contenant un espace (le cas réel de ce poste de développement, sous `.../KEMET SERVICES/...`). Aucun échappement manuel de chaîne SQL n'est donc nécessaire — le paramètre lié est plus sûr et a été préféré à l'interpolation échappée, qui fonctionne aussi mais n'apporte rien ici.
+
+**Connexion séparée, en LECTURE SEULE** (`{ readOnly: true }`) : ce module ne doit jamais pouvoir écrire sur le fichier source, et `VACUUM INTO` n'a besoin d'écrire que sur la destination — vérifié.
+
+**Réglages par défaut**, aucune nouvelle variable d'environnement : intervalle 24 h, rétention des 14 dernières sauvegardes (triées par nom, déjà chronologique grâce à l'horodatage), délai initial de 5 min après le démarrage pour ne pas concurrencer le boot du serveur. Minuteurs `unref()`-és. Démarré depuis `server/src/index.js` juste après le choix du store, **seulement si `!store.isEphemeral && store.DB_PATH`** — rien à sauvegarder en mode dégradé mémoire.
+
+⚠️ **N'ajoute rien aux exports de `db.js` ni `db-memory.js`** — délibérément : ce module ouvre sa propre connexion via `store.DB_PATH` (déjà exporté), pour ne courir aucun risque sur la parité des deux stores (§5), le risque n°1 documenté du dépôt. Vérifié : `server/test/parite.test.js` passe toujours à l'identique.
+
+**Limite assumée, à surveiller si le volume de données change d'échelle :** `node:sqlite` est entièrement synchrone — le temps d'un `VACUUM INTO`, le serveur ne répond à aucune requête. Sans gravité sur une base de quelques mégaoctets et une poignée de formateurs.
+
+**Vérifié :** exécution réelle sur une base de test (écriture, relecture, rétention qui élimine bien les plus anciennes au-delà de la limite, y compris avec un dossier de destination à espace dans son chemin), `npm test` (11/11, parité intacte) et `npm run build` après l'ajout — aucune régression. Non vérifié : un cycle complet de 24 h en conditions réelles sur Railway, faute de délai — à confirmer par les journaux de démarrage (`Sauvegarde SQLite écrite : …`) après quelques jours en production.

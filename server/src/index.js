@@ -32,6 +32,19 @@ try {
   store = require('./db-memory');
 }
 
+// Sauvegardes périodiques du fichier SQLite (server/src/sauvegarde.js).
+// Seulement si le store persiste réellement : le store en mémoire n'a aucun
+// fichier à sauvegarder, VACUUM INTO échouerait sur son DB_PATH factice.
+if (!store.isEphemeral && store.DB_PATH) {
+  try {
+    require('./sauvegarde').demarrerSauvegardesAutomatiques({ dbPath: store.DB_PATH });
+  } catch (err) {
+    // Une sauvegarde qui ne démarre pas n'est pas une raison d'arrêter le
+    // site — même logique que le repli sur le store en mémoire ci-dessus.
+    console.error('Sauvegardes automatiques non démarrées :', err.message);
+  }
+}
+
 const app = express();
 // 1 et NON true. `true` fait confiance à toute la chaîne X-Forwarded-For, donc
 // à l'en-tête que le client écrit lui-même : n'importe qui pourrait se donner
