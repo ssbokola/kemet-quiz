@@ -772,6 +772,38 @@ function setLearnerPharmacy(learnerId, pharmacyId) {
   return toLearner(learner);
 }
 
+/**
+ * Les participations des apprenants d'une officine, sur la période, de la
+ * plus ancienne à la plus récente — analogue de listLearnerHistory, mais à
+ * cheval sur plusieurs apprenants et plusieurs quiz. Filtre sur
+ * entry.pharmacyId, la graphie FIGÉE de la participation, jamais sur
+ * l'officine actuelle de la fiche.
+ */
+function listPharmacyHistory(pharmacyId, { from = null, to = null } = {}) {
+  if (!pharmacyId) return [];
+
+  const rows = [];
+  for (const { quizId, entry } of allEntries()) {
+    if (entry.pharmacyId !== pharmacyId) continue;
+    if (!inWindow(entry.submittedAt, from, to)) continue;
+    const quiz = quizzes.get(quizId);
+    rows.push({
+      resultId: entry.id,
+      quizId,
+      quizTitle: quiz ? quiz.title : null,
+      playerName: entry.playerName,
+      score: entry.score,
+      total: entry.total,
+      submittedAt: entry.submittedAt,
+    });
+  }
+
+  // Même ordre que db.js (ORDER BY submitted_at ASC, id ASC) : voir
+  // listLearnerHistory ci-dessus, même raison.
+  rows.sort((a, b) => compareKeys(a.submittedAt, b.submittedAt) || a.resultId - b.resultId);
+  return rows;
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -810,4 +842,6 @@ module.exports = {
   mergePharmacies,
   listDuplicatePharmacyCandidates,
   setLearnerPharmacy,
+  // 35e fonction, au MÊME RANG que dans db.js.
+  listPharmacyHistory,
 };

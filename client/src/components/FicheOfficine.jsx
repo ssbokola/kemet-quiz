@@ -22,8 +22,13 @@ const AUCUNE_ERREUR = { texte: '', n: 0 };
  * `onSupprimee` est appelée après une fusion réussie, avec une phrase toute
  * faite décrivant ce qui a été déplacé — apprenants ET participations, les
  * deux valeurs que mergePharmacies rend.
+ *
+ * `onHistorique` ouvre les résultats de cette officine (OfficineHistorique) —
+ * tous les quiz de ses apprenants, filtrables par période, exportables. C'est
+ * le point d'entrée « naviguer en partant de l'officine » demandé par
+ * l'utilisateur : annuaire des officines → cette fiche → ses résultats.
  */
-function FicheOfficine({ officine, onRetour, onSupprimee }) {
+function FicheOfficine({ officine, onRetour, onSupprimee, onHistorique }) {
   const [fiche, setFiche] = useState(null);
   const [autres, setAutres] = useState([]);
   const [stockage, setStockage] = useState(null);
@@ -201,6 +206,21 @@ function FicheOfficine({ officine, onRetour, onSupprimee }) {
           ) : null}
         </div>
         <p>Corriger cette fiche, ou la réunir avec une autre.</p>
+        {/* .tag-row et non le .field-row du dessus, délibérément : il porte déjà
+            l'initiale décorative, et n'a pas de flex-wrap (voir AnnuaireApprenants).
+            Un troisième enfant sans .tag-row débordait à 375 px. */}
+        {onHistorique && (
+          <div className="tag-row">
+            <button
+              type="button"
+              className="app-bar-link"
+              onClick={() => onHistorique({ id: officine?.id, displayName: nomAffiche })}
+            >
+              <Icon name="chart" size={15} width={1.7} />
+              Voir les résultats de cette officine
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="error-slot" role="alert" aria-atomic="true">

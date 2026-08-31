@@ -1233,6 +1233,40 @@ app.post('/api/pharmacies/:id/merge', requireAnnuaire, requireAdmin, (req, res) 
   res.json({ movedLearners, movedResults });
 });
 
+// Toutes les participations des apprenants de cette officine, tous quiz
+// confondus, sur la période — l'analogue de /api/learners/:id/history mais à
+// cheval sur plusieurs apprenants. Même forme de réponse, mêmes champs.
+app.get('/api/pharmacies/:id/history', requireAnnuaire, requireAdmin, (req, res) => {
+  const pharmacy = store.getPharmacy(req.params.id);
+  if (!pharmacy) return res.status(404).json({ error: 'Officine introuvable' });
+
+  const periode = parsePeriode(req.query);
+  if (!periode.ok) return res.status(400).json({ error: periode.error });
+
+  const evaluations = store.listPharmacyHistory(pharmacy.id, {
+    from: periode.from,
+    to: periode.toExclusive,
+  });
+  const resume = resumeDesEvaluations(evaluations);
+
+  res.json({
+    pharmacy,
+    periode: {
+      from: periode.fromDay,
+      to: periode.toDay,
+      tzOffset: periode.tzOffset,
+      fromInstant: periode.from,
+      toInstantExclusive: periode.toExclusive,
+    },
+    evaluations: evaluations.map((e) => ({
+      ...e,
+      percent: e.total > 0 ? Math.round((e.score * 100) / e.total) : null,
+    })),
+    resume: { attempts: resume.attempts, avgPercent: arrondirPourcent(resume.avgPercent) },
+    stockage: etatStockage(),
+  });
+});
+
 // SPA fallback — serve index.html for all non-API routes
 app.get('{*splat}', (req, res) => {
   res.sendFile(path.join(clientBuild, 'index.html'));

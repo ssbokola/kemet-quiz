@@ -255,6 +255,12 @@ function migrate() {
     );
     db.exec('CREATE INDEX IF NOT EXISTS idx_results_pharmacy ON results(quiz_id, pharmacy_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_learners_pharmacy ON learners(pharmacy_id)');
+    // Sert listPharmacyHistory : mêmes colonnes de tête que idx_results_pharmacy
+    // ne suffiraient pas, cette requête filtre pharmacy_id SEUL puis trie par
+    // date — l'analogue exact de idx_results_learner_date, pour une officine.
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_results_pharmacy_date ON results(pharmacy_id, submitted_at)'
+    );
 
     // AVANT backfillLearners, et ce n'est pas indifférent : le backfill
     // regroupe les participations orphelines PAR player_key et fabrique une
@@ -794,6 +800,23 @@ const stmt = {
   `),
 
   setLearnerPharmacy: db.prepare('UPDATE learners SET pharmacy_id = @pharmacyId WHERE id = @id'),
+
+  // Toutes les participations des apprenants d'UNE officine, tous quiz
+  // confondus. Filtre sur results.pharmacy_id — la graphie FIGÉE du jour —
+  // et non sur l'officine actuelle des fiches : un apprenant qui a changé
+  // d'officine depuis ne doit pas faire apparaître ses anciennes réponses
+  // sous l'officine où il est aujourd'hui (même règle que listLearnerHistory
+  // pour player_name, symétrique).
+  listPharmacyHistory: db.prepare(`
+    SELECT r.id AS result_id, r.quiz_id, q.title AS quiz_title, r.player_name,
+           r.score, r.total, r.submitted_at
+      FROM results r
+      JOIN quizzes q ON q.id = r.quiz_id
+     WHERE r.pharmacy_id = @pharmacyId
+       AND (@from IS NULL OR r.submitted_at >= @from)
+       AND (@to   IS NULL OR r.submitted_at <  @to)
+     ORDER BY r.submitted_at ASC, r.id ASC
+  `),
 };
 
 // Champs modifiables par PATCH /api/quiz/:id, chacun vers sa colonne.
@@ -1418,6 +1441,26 @@ function setLearnerPharmacy(learnerId, pharmacyId) {
   return rowToLearner(stmt.getLearner.get(learnerId));
 }
 
+/**
+ * Les participations des apprenants d'une officine, sur la période, de la
+ * plus ancienne à la plus récente — analogue de listLearnerHistory, mais à
+ * cheval sur plusieurs apprenants et plusieurs quiz.
+ */
+function listPharmacyHistory(pharmacyId, { from = null, to = null } = {}) {
+  if (!pharmacyId) return [];
+  return stmt.listPharmacyHistory
+    .all({ pharmacyId, from: from ?? null, to: to ?? null })
+    .map((row) => ({
+      resultId: row.result_id,
+      quizId: row.quiz_id,
+      quizTitle: row.quiz_title,
+      playerName: row.player_name,
+      score: row.score,
+      total: row.total,
+      submittedAt: row.submitted_at,
+    }));
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -1461,4 +1504,7 @@ module.exports = {
   mergePharmacies,
   listDuplicatePharmacyCandidates,
   setLearnerPharmacy,
+  // 35e fonction. Même règle : ajoutée APRÈS tout ce qui précède, au même
+  // rang dans db-memory.js, dans le même commit.
+  listPharmacyHistory,
 };

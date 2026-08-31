@@ -6,6 +6,7 @@ import FicheApprenant from './FicheApprenant';
 import DoublonsProbables from './DoublonsProbables';
 import Officines from './Officines';
 import FicheOfficine from './FicheOfficine';
+import OfficineHistorique from './OfficineHistorique';
 import AffecterOfficines from './AffecterOfficines';
 import { phraseFusionOfficine } from '../nom';
 
@@ -39,6 +40,7 @@ function Apprenants({ onBack }) {
   const [vue, setVue] = useState('liste');
   // vue ∈ liste | historique | annuaire | fiche | doublons
   //     | officines | ficheOfficine | doublonsOfficines | affecterOfficines
+  //     | historiqueOfficine
   // L'apprenant ouvert : { id, displayName }. Le nom voyage avec l'identifiant
   // pour que la vue de détail ait un titre à afficher dès son premier rendu,
   // avant même que sa requête ait répondu.
@@ -58,6 +60,10 @@ function Apprenants({ onBack }) {
   const ouvrirOfficine = (fiche) => {
     setOfficine(fiche);
     setVue('ficheOfficine');
+  };
+  const ouvrirHistoriqueOfficine = (fiche) => {
+    setOfficine(fiche);
+    setVue('historiqueOfficine');
   };
 
   // En sortir : la fiche est oubliée. Sans cela un nom périmé resterait en
@@ -112,6 +118,7 @@ function Apprenants({ onBack }) {
   if (!apprenant && vue === 'historique') vueSure = 'liste';
   if (!apprenant && vue === 'fiche') vueSure = 'annuaire';
   if (!officine && vue === 'ficheOfficine') vueSure = 'officines';
+  if (!officine && vue === 'historiqueOfficine') vueSure = 'officines';
 
   if (vueSure === 'historique') {
     return <ApprenantHistorique apprenant={apprenant} onRetour={aller('liste')} />;
@@ -160,8 +167,13 @@ function Apprenants({ onBack }) {
         officine={officine}
         onRetour={aller('officines')}
         onSupprimee={apresFusionOfficine}
+        onHistorique={ouvrirHistoriqueOfficine}
       />
     );
+  }
+
+  if (vueSure === 'historiqueOfficine') {
+    return <OfficineHistorique officine={officine} onRetour={aller('officines')} />;
   }
 
   if (vueSure === 'doublonsOfficines') {
