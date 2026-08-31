@@ -1,10 +1,10 @@
 # Kemet Quiz — Handoff technique
 
-**Dernière mise à jour :** 28 août 2026
+**Dernière mise à jour :** 31 août 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit :** `1a3b69e` — *Mettre le handoff à jour, et cadrer le prochain chantier*
-**Non commité au 28/08 :** quatre lots — prévention des doublons, « Mes quiz » et adresses, doublons probables, renormalisation des clés de nom. Voir §12.
+**Dernier commit :** `8163b36` — *Rattacher chaque apprenant a une officine : saisie libre, anti-doublons, regroupement*
+**Tout est commité et en ligne.** Depuis la mise à jour du 28/08 (§12), deux chantiers de plus ont été livrés et déployés : le détail des réponses par question (§13) et le rattachement à une officine (§14).
 
 ---
 
@@ -74,8 +74,12 @@ kemet-quizz/
 │       │   ├── PeriodePicker.jsx    sélecteur de période (deux dates)
 │       │   ├── AnnuaireApprenants.jsx   formateur : entretien de l'annuaire
 │       │   ├── FicheApprenant.jsx   formateur : renommer, (dé)suggérer, fusionner
-│       │   ├── DoublonsProbables.jsx formateur : groupes de fiches à réunir
-│       │   ├── Welcome.jsx          accueil apprenant + saisie assistée + nom figé
+│       │   ├── DoublonsProbables.jsx formateur : groupes de fiches à réunir — PARAMÉTRÉ, réutilisé par les officines
+│       │   ├── ChampAssiste.jsx     champ à suggestion + verrou, extrait de Welcome (nom ET officine)
+│       │   ├── Officines.jsx        formateur : annuaire des officines (créer, rechercher)
+│       │   ├── FicheOfficine.jsx    formateur : renommer, fusionner une officine
+│       │   ├── AffecterOfficines.jsx formateur : rattacher en masse les fiches sans officine
+│       │   ├── Welcome.jsx          accueil apprenant, DEUX étapes : nom, puis officine
 │       │   ├── Quiz.jsx             passation, thème encre
 │       │   └── Results.jsx          score, correction, export PDF
 │       ├── pages/
@@ -94,7 +98,8 @@ kemet-quizz/
         ├── periode.js        jours calendaires → instants UTC (la logique la plus piégeuse)
         ├── name-key.js       normalisation des noms — décide de l'IDENTITÉ
         ├── suggestion.js     fusion des deux familles de correspondance, quota compris
-        └── similarite.js     rapprochement de fiches — PROPOSE, ne décide jamais
+        ├── similarite.js     rapprochement de fiches — PROPOSE, ne décide jamais
+        └── mots-vides-officine.js  mots à ignorer pour juger si une officine est un doublon (§14)
     scripts/
         └── migration-inverse.js  outil d'urgence, jamais lancé automatiquement
     test/
@@ -114,8 +119,8 @@ kemet-quizz/
 4. **Génération** — trois étapes affichées : lecture du document (progression réelle des pages), rédaction, vérification. Réponse en flux NDJSON.
 5. **Relecture** (`ReviewQuestions`) — chaque question est éditable ; cliquer une option la désigne comme bonne réponse ; bouton de régénération par question. Bandeau d'avertissement si des questions ont été écartées à la validation.
 6. **Partage** — QR code, lien copiable, envoi WhatsApp, fermeture/réouverture du quiz.
-7. **Résultats** (`QuizResults`) — la liste des quiz avec leur nombre de réponses ; pour chacun, qui a répondu, quel score, quand, la moyenne, et un export `.csv` (séparateur `;` et BOM UTF-8, pour qu'Excel en configuration française lise les accents).
-8. **Apprenants** (`Apprenants` et ses quatre vues) — l'annuaire avec la moyenne et le nombre d'évaluations de chacun ; l'historique d'un apprenant, filtrable par **deux dates saisies** et exportable en `.csv` (la période appliquée est exportée telle quelle) ; et l'entretien de l'annuaire : créer une fiche, corriger un nom, **sortir une fiche de quarantaine** (bascule `suggestible`), fusionner deux doublons.
+7. **Résultats** (`QuizResults`, un quiz à la fois) — qui a répondu, quel score, quand, la moyenne, un export `.csv` (séparateur `;`, BOM UTF-8, colonne Officine depuis le 31/08) ; **« Ce qu'il faut reprendre »** (depuis le 28/08, §13) : les questions du quiz triées de la plus ratée à la mieux réussie ; et depuis le 31/08 (§14), les réponses se **regroupent par officine** dès que le quiz en compte au moins deux — sans moyenne par groupe, ce n'est pas un comparatif.
+8. **Apprenants** (`Apprenants` et son aiguillage interne) — l'annuaire avec la moyenne et le nombre d'évaluations de chacun ; l'historique d'un apprenant, filtrable par **deux dates saisies** et exportable en `.csv` (la période appliquée est exportée telle quelle, colonne Officine comprise) ; l'entretien de l'annuaire : créer une fiche, corriger un nom, **sortir une fiche de quarantaine** (bascule `suggestible`), fusionner deux doublons ; et depuis le 31/08, l'**annuaire des officines** (créer, fusionner, rattacher en masse) — voir §14.
 
 > **La moyenne est la moyenne des POURCENTAGES**, pas `Σscore / Σtotal` : chaque évaluation compte pareil, un 5/5 pèse autant qu'un 25/30. C'est un choix explicite de l'utilisateur. Elle n'est jamais affichée seule, toujours avec le nombre d'évaluations — non pondérée, elle est fragile sur peu de mesures.
 
@@ -123,11 +128,12 @@ kemet-quizz/
 
 ### Participant — `/quiz/:id`
 
-1. **Accueil** (`Welcome`) — titre, nombre de questions, durée estimée, **saisie assistée du nom** : à partir de trois caractères, l'application propose les noms connus de l'annuaire, pour que les évaluations successives d'une même personne se rattachent à la même fiche.
+1. **Accueil** (`Welcome`) — titre, nombre de questions, durée estimée, puis **DEUX étapes depuis le 31/08** (§14) : le nom, puis l'officine. Chaque étape utilise le même composant `ChampAssiste` (extrait de l'ancien champ unique) : à partir de trois caractères, l'application propose les valeurs connues (noms via `/api/learners/suggest`, officines via `/api/pharmacies/suggest`), pour que les évaluations successives d'une même personne — ou d'une même officine — se rattachent à la même fiche. L'officine est **obligatoire pour démarrer, mais n'a pas besoin de correspondre à une officine déjà connue** : une saisie libre est acceptée sans confirmation.
    Ce n'est **pas** une combobox ARIA, délibérément : un champ texte ordinaire et de vrais `<button>`, parce que le focus virtuel (`aria-activedescendant`) est précisément ce que TalkBack et VoiceOver iOS tiennent le plus mal, et que la cible est le téléphone.
-   **Un échec de suggestion n'est jamais une erreur pour l'apprenant** : la liste se replie, sans un mot, et il tape son nom comme avant. Aucun appel réseau ne précède le début du quiz.
-   La liste est rendue **hors du flux** : `.welcome` est en `space-between` avec un `min-height`, et une liste en flux ferait remonter le bouton « Commencer » à chaque aller-retour réseau, sous le pouce.
-   **Une étape de confirmation existe sur le chemin critique**, et c'est la seule barrière anti-doublon côté public : si des noms sont proposés et qu'aucun n'a été retenu, « Commencer » n'envoie pas — il ouvre un bloc « Aucun de ces noms n'est le vôtre ? » avec « Corriger » / « Oui, c'est mon nom ». Sans correspondance, en revanche, le quiz démarre directement : il n'y a aucune ambiguïté à lever.
+   **Un échec de suggestion n'est jamais une erreur pour l'apprenant** : la liste se replie, sans un mot, et il tape comme avant. Aucun appel réseau ne précède le début du quiz.
+   La liste est rendue **hors du flux** : `.welcome` est en `space-between` avec un `min-height`, et une liste en flux ferait remonter le bouton d'action à chaque aller-retour réseau, sous le pouce.
+   **Une étape de confirmation existe sur chaque champ**, et c'est la seule barrière anti-doublon côté public : si des valeurs sont proposées et qu'aucune n'a été retenue, le bouton n'envoie pas — il ouvre un bloc de confirmation. Sans correspondance, en revanche, l'étape avance directement : il n'y a aucune ambiguïté à lever.
+   **Pourquoi deux étapes et non un seul écran à deux champs** : mesuré sur le titre de production le plus long à 375×667, verrouiller les deux champs à la fois dépasse le budget d'espace libre que `.welcome` (`space-between`) laisse au-dessus du bouton, et l'aurait déplacé — interdit par la règle « zéro pixel » de cet écran (voir l'en-tête de `Welcome.jsx`). L'officine reste **facultative côté serveur** (`POST /submit`) : une session commencée avant ce déploiement n'est jamais passée par cette étape, et `QuizPage` saute `Welcome` à la reprise — un 400 sur `pharmacyName` manquant aurait enfermé ces apprenants avec leurs réponses déjà en cours.
 2. **Passation** (`Quiz`) — thème encre (`document.body` reçoit la classe `theme-ink`), une question par écran, **pas d'auto-avance**. Barre segmentée cliquable, feuille « toutes les questions », écran de récapitulatif final qui nomme les questions manquantes, modale de confirmation avant envoi.
    Raccourcis clavier : `A`–`F` ou `1`–`6` pour répondre (le nombre d'options va de 2 à 6 ; A–D est le cas nominal, pas le contrat), `←` `→` `Entrée` pour naviguer, `Escape` pour fermer.
 3. **Résultats** (`Results`) — score animé dans un anneau, confettis au-delà de 80 %, correction question par question avec explication, export PDF, partage WhatsApp, bouton « Refaire » si le quiz autorise plusieurs tentatives.
@@ -148,15 +154,23 @@ kemet-quizz/
 | `GET /api/learners` | ✅ | Annuaire : chaque apprenant avec `attempts`, `avgPercent`, `lastSubmittedAt`. Période optionnelle |
 | `GET /api/learners/:id/history` | ✅ | Historique borné par dates + moyenne de la période |
 | `POST /api/learners` | ✅ | Le formateur crée une fiche. `409` avec la fiche existante en cas de doublon |
-| `PATCH /api/learners/:id` | ✅ | `{ displayName?, suggestible? }`. Ne touche à aucune ligne de `results` |
+| `PATCH /api/learners/:id` | ✅ | `{ displayName?, suggestible?, pharmacyId? }`. `pharmacyId` doit exister (`404` sinon) ; ne touche à aucune ligne de `results` |
 | `POST /api/learners/:id/merge` | ✅ | `{ intoId }` — déplace les évaluations puis supprime la fiche source |
 | `GET /api/learners/doublons` | ✅ | Groupes de fiches désignant probablement la même personne. **Lecture seule : elle propose, le formateur tranche.** ⚠️ Déclarée AVANT `/api/learners/:id/history` — « doublons » est un segment littéral qu'un `:id` capterait |
 | `GET /api/learners/suggest` | — | **Publique.** `?q=&quizId=` → `{ suggestions: [...] }`, un tableau de **chaînes seules** — ni id, ni date, ni compteur |
+| `GET /api/pharmacies` | ✅ | Annuaire des officines, avec le nombre d'apprenants rattachés à chacune |
+| `POST /api/pharmacies` | ✅ | Le formateur crée une officine. `409` avec l'officine existante en cas de doublon |
+| `PATCH /api/pharmacies/:id` | ✅ | `{ displayName? }` |
+| `POST /api/pharmacies/:id/merge` | ✅ | `{ intoId }` — déplace apprenants **et** participations, transactionnel |
+| `GET /api/pharmacies/doublons` | ✅ | Groupes d'officines probablement identiques. ⚠️ Déclarée avant tout `/api/pharmacies/:id` |
+| `GET /api/pharmacies/suggest` | — | **Publique.** `?q=` → `{ suggestions: [...] }`. Autorise les **chiffres** (`des 2 Plateaux`), à la différence de `/learners/suggest` — voir §14 |
 | `GET /api/quiz/:id` | — | Quiz **sans** les réponses. `410` si fermé ou expiré |
-| `POST /api/quiz/:id/submit` | — | Corrige et enregistre. `400` si `nameKey()` du nom est vide (espaces ou ponctuation seuls — garde-fou contre une fiche à `name_key` vide qui adopterait toutes les saisies vides), `409` si tentative unique déjà utilisée, `410` si fermé |
+| `POST /api/quiz/:id/submit` | — | Corrige et enregistre. `400` si `nameKey()` du nom est vide (espaces ou ponctuation seuls — garde-fou contre une fiche à `name_key` vide qui adopterait toutes les saisies vides), `409` si tentative unique déjà utilisée, `410` si fermé. `pharmacyName` est **facultatif** (§14) |
 | `GET {*splat}` | — | Repli SPA. ⚠️ **Toute route d'API doit être déclarée AVANT lui**, sinon elle renvoie `index.html` à la place du JSON |
 
 **La route de suggestion est publique et c'est un arbitrage assumé.** Elle exige au moins 3 caractères, plafonne à 5 résultats, n'accepte qu'un préfixe strict sur une liste blanche de caractères (`/^[a-z][a-z '-]*$/`, condition de sûreté du `GLOB` qui n'a pas de clause `ESCAPE`), exclut les fiches en quarantaine, exige un `quizId` dont le quiz soit **ouvert et non expiré**, et applique une limitation de débit par IP. Elle reste néanmoins **énumérable** par qui détient un lien de quiz vivant : c'est le prix de la fonctionnalité, voir §8.
+
+`/api/pharmacies/suggest` partage la même fabrique de route (`routeSuggestion`) et donc **le même seau anti-abus par IP** que `/api/learners/suggest` — les dupliquer aurait doublé le budget de sondage en silence. Sa liste blanche autorise les chiffres (`/^[a-z0-9][a-z0-9 ]*$/`) : une officine peut légitimement s'appeler « Pharmacie des 2 Plateaux », alors qu'un nom de personne n'en a jamais besoin et que les refuser y limite l'énumération. `SEAU_CAPACITE` est passé de 20 à 30 en conséquence (deux champs assistés par apprenant, une salle entière derrière la même IP).
 
 **Verrou de confidentialité.** Les cinq routes `/api/learners*` protégées répondent **503** quand `ADMIN_PASSWORD` est vide, plutôt que de laisser `requireAdmin` ouvrir l'annuaire à tous. Le quiz continue de fonctionner ; seul l'annuaire est scellé.
 
@@ -172,17 +186,19 @@ Motif historique : les gros PDF provoquaient des `502` (`Request aborted` dans m
 
 ### Stockage
 
-Tout passe par `server/src/db.js`, qui expose **21 fonctions** — les quiz et les résultats, puis l'annuaire d'apprenants (`listQuizzes`, `suggestLearners`, `resolveLearner`, `ensureLearner`, `createLearner`, `updateLearner`, `getLearner`, `listLearners`, `listLearnerHistory`, `findResultByLearner`, `mergeLearners`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 21 fonctions, dans le même ordre.
+Tout passe par `server/src/db.js`, qui expose **34 fonctions** — les quiz et les résultats, l'annuaire d'apprenants, le détail des réponses (§13 : `listQuestionStats`, `listResultAnswers`) et depuis le 31/08 l'annuaire des officines (§14 : `suggestPharmacies`, `resolvePharmacy`, `ensurePharmacy`, `createPharmacy`, `updatePharmacy`, `getPharmacy`, `listPharmacies`, `mergePharmacies`, `listDuplicatePharmacyCandidates`, `setLearnerPharmacy`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 34 fonctions, **dans le même ordre** — c'est `parite.test.js` qui le garantit à chaque ajout.
 
-Trois tables :
+Cinq tables :
 
 | Table | Contenu |
 | --- | --- |
 | `quizzes` | un quiz par ligne ; les questions sont sérialisées en JSON dans une colonne (elles sont toujours lues et écrites en bloc) |
-| `results` | une ligne par participation, liée au quiz par `ON DELETE CASCADE`, et à l'apprenant par `learner_id` (`ON DELETE SET NULL`) |
-| `learners` | une fiche par apprenant : `display_name`, `name_key` (unique), `created_by` (`learner` / `trainer` / `import`), `suggestible` |
+| `results` | une ligne par participation, liée au quiz par `ON DELETE CASCADE`, à l'apprenant par `learner_id` (`ON DELETE SET NULL`) et à l'officine par `pharmacy_id` (`ON DELETE SET NULL`) ; porte aussi `pharmacy_name`, la graphie figée du jour |
+| `learners` | une fiche par apprenant : `display_name`, `name_key` (unique), `created_by` (`learner` / `trainer` / `import`), `suggestible`, `pharmacy_id` (l'officine ACTUELLE de la fiche) |
+| `pharmacies` | une officine par ligne, mêmes 6 colonnes que `learners` (`display_name`, `name_key` unique, `created_at`, `created_by`, `suggestible`) |
+| `answers` | le détail par question d'une participation — voir §13 |
 
-Index : `idx_results_quiz`, `idx_results_name`, `idx_learners_key` (UNIQUE) et `idx_results_learner_date` — ce dernier sert l'historique d'un apprenant sur une plage de dates, en fournissant à la fois le filtre et l'ordre.
+Index : `idx_results_quiz`, `idx_results_name`, `idx_learners_key` (UNIQUE), `idx_results_learner_date`, `idx_pharmacies_key` (UNIQUE), `idx_results_pharmacy` et `idx_learners_pharmacy`.
 
 `node:sqlite` (`DatabaseSync`) est **synchrone**. `POST /api/quiz/:id/submit` est resté synchrone de bout en bout — c'est ce qui compte : son cycle lecture → vérification → écriture (la règle de tentative unique) ne peut pas être entrelacé avec une autre requête, aucune transaction n'y est donc nécessaire. Deux gestionnaires sont néanmoins `async` (`upload-pdf` et `regenerate`, qui attendent le modèle), et `db.js` porte **deux transactions explicites** en `BEGIN IMMEDIATE` / `COMMIT` avec `ROLLBACK` : le backfill de migration et la fusion de deux fiches.
 
@@ -370,13 +386,13 @@ SQLite est un fichier posé sur un volume, et un volume Railway ne se monte que 
 
 Aucune sauvegarde automatique du fichier `.db`. Pour une copie de sûreté, passer par la CLI Railway ou un montage temporaire.
 
-### ⛔ Le détail des réponses n'est PAS conservé
+### ✅ Le détail des réponses est conservé — corrigé le 28/08/2026
 
-C'est la limitation la plus importante aujourd'hui, et le prochain chantier (§10).
+Voir §13. Une table `answers` garde, pour chaque participation, la réponse donnée et la bonne réponse question par question. « Ce qu'il faut reprendre » (écran Résultats) et le détail dépliable de l'historique d'un apprenant en découlent. Les participations antérieures à cette date n'ont pas de détail et n'en auront jamais — l'écran le dit plutôt que d'afficher un vide qu'on prendrait pour un bug.
 
-`results` garde `quiz_id`, `player_name`, `player_key`, `learner_id`, `score`, `total` et `submitted_at` — mais **aucun détail par question**. On sait qu'Aya a fait 3/5 ; on ne sait **jamais** sur quelles questions elle s'est trompée. Le serveur calcule pourtant la correction complète à chaque envoi (`index.js`, dans le gestionnaire de `submit`) et la renvoie à l'apprenant — puis la jette.
+### Un léger mouvement du bouton « Commencer » à 320 px de large (iPhone SE)
 
-Conséquence pédagogique : impossible de répondre à « quelle question est ratée par tout le monde ? », qui est probablement la question la plus utile qu'un formateur puisse poser à cet outil.
+Trouvé le 31/08/2026 en testant l'écran d'accueil pour le chantier des officines (§14), **pas causé par lui** : verrouiller le champ **nom seul**, sur la version À UN SEUL CHAMP déjà en production avant ce chantier, déplace déjà le bouton de 45 px à cette largeur précise (budget d'espace libre à 7 px avant verrouillage, contre ~125 px à 375 px de large, la largeur normalement vérifiée). Confirmé par lecture du code déployé, qui partage la même structure de bloc « nom retenu » que la version actuelle. **Non corrigé** : hors périmètre du chantier qui l'a trouvé, à traiter pour lui-même si un écran plus étroit que 375 px doit être garanti.
 
 ### La suggestion trouve désormais N'IMPORTE QUEL mot du nom
 
@@ -444,6 +460,23 @@ Restent à écrire quand l'occasion se présentera : un différentiel complet de
 ---
 
 ## 9. État des vérifications
+
+### Détail des réponses et officines — vérifiés le 28 et le 31/08/2026, EN PRODUCTION
+
+Contrairement au lot « annuaire d'apprenants » ci-dessous, ces deux chantiers ont été vérifiés **après** leur déploiement, pas seulement en local.
+
+| Point | Méthode | Résultat |
+| --- | --- | --- |
+| Détail des réponses | Quiz réel repassé en production, historique déplié | ✅ détail correct, question par question |
+| Migration officines sur base réelle | Copie de production (`VACUUM INTO`), démarrage sur la copie | ✅ schéma créé, `user_version` inchangé, second démarrage no-op |
+| Déploiement officines | `railway status` / `railway logs` juste après le push | ✅ `Online`, commit attendu, démarrage sans `MIGRATION_FAILED` |
+| Route publique `/api/pharmacies/suggest` | `curl` en production après déploiement | ✅ `200`, pas de `404` |
+| Bundle servi | Hash du fichier JS dans le HTML de production comparé au build local | ✅ identique (`index-DRlHEbgg.js`) |
+| Regroupement par officine, recherche, CSV (Lot 4) | Script Node autonome rejouant la logique sur les vraies données de développement (pas de navigateur — écran protégé par mot de passe) | ✅ tous les cas limites (0, 1, 2+ officines) |
+| Écran Welcome à deux étapes | Navigateur, 375×667, quiz réel du titre le plus long | ✅ **0 px** de déplacement du bouton dans les 4 combinaisons nom/officine verrouillés ou non |
+| Continuité du service pendant le déploiement | Logs de production pendant le déploiement | ✅ un apprenant réel a continué de passer des quiz sans interruption visible |
+
+⚠️ **Non vérifié en navigateur réel sur la production** : les écrans Officines / Fiche officine / Affecter en masse (protégés par mot de passe formateur — l'assistant ne saisit jamais de mot de passe, même de test). Vérifiés en local dans le navigateur et par le script ci-dessus ; à confirmer par le formateur à l'usage.
 
 ### ⚠️ Le lot « annuaire d'apprenants » n'a PAS été éprouvé en production
 
@@ -547,33 +580,9 @@ Sur ce modèle, le raisonnement est **actif par défaut** et puise dans le même
 
 ---
 
-## 10. Prochain chantier — conserver le détail des réponses
+## 10. Prochain chantier
 
-**C'est le chantier demandé par l'utilisateur, à ouvrir en priorité.**
-
-### Le besoin, dans ses mots
-
-> « On sait qu'Aya a fait 3/5, jamais sur quelles questions elle s'est trompée. »
-
-Et derrière, la question qu'un formateur d'officine veut vraiment poser : **quelle question est ratée par tout le monde ?** C'est elle qui dit quoi reprendre en formation.
-
-### Ce qui existe déjà, et qu'il suffit de ne plus jeter
-
-`server/src/index.js`, gestionnaire de `POST /api/quiz/:id/submit` : la correction complète est **déjà calculée** — pour chaque question, la réponse donnée, la bonne réponse, et si elle était juste. Elle part dans la réponse HTTP, puis disparaît. Rien n'est à recalculer, tout est à persister.
-
-### Les décisions à prendre avec l'utilisateur, avant d'écrire
-
-1. **Grain de stockage.** Une table `answers(result_id, question_index, given, correct)` — normalisée, interrogeable, permet « la question 3 est ratée par 80 % » d'une requête. Ou une colonne JSON sur `results` — plus simple, mais rend toute statistique agrégée pénible. **Recommandation : la table.** C'est précisément ce que le JSON empêcherait de faire.
-2. **Le texte de la question.** Les questions d'un quiz sont modifiables après coup (`PATCH /api/quiz/:id`). Faut-il figer l'énoncé au moment de la réponse, comme `player_name` l'est déjà, ou toujours relire le quiz courant ? Ce n'est pas un détail : sans figeage, une statistique portera sur un énoncé qui a changé.
-3. **Ce qu'on montre, et à qui.** Une vue « questions les plus ratées » par quiz ? Le détail par apprenant dans son historique ? Les deux ? L'apprenant voit déjà sa correction à l'envoi — la question porte sur le formateur.
-4. **Rétroactivité.** Les évaluations déjà enregistrées n'ont aucun détail et n'en auront jamais. L'écran doit le dire, plutôt que d'afficher un vide qu'on prendra pour un bug.
-
-### Le chemin technique
-
-- **Migration obligatoire** — relire §5, la section sur `migrate()`. Une nouvelle table passe par `CREATE TABLE IF NOT EXISTS` dans `migrate()`, et **la parité de `server/src/db-memory.js` doit suivre dans le même lot** : 21 exports identiques, dans le même ordre.
-- Index à prévoir : `(result_id)` pour le détail d'une participation, `(quiz_id, question_index)` pour l'agrégat « les plus ratées » — ce dernier suppose de porter `quiz_id` sur la table, ou une jointure par `results`.
-- Volume : 30 questions × N participations. Sur un usage d'officine, c'est négligeable.
-- Le corps de `POST /submit` ne change pas. Seul l'enregistrement s'enrichit.
+**Rien n'est décidé pour l'instant.** Les deux demandes en cours au 28/08 (conserver le détail des réponses, rattacher chaque apprenant à une officine) sont livrées et en production — voir §13 et §14. Piocher dans §11 « Autres pistes » à la prochaine demande, ou attendre la prochaine remontée du terrain.
 
 ### Pièges déjà payés sur ce projet, à ne pas repayer
 
@@ -582,6 +591,7 @@ Et derrière, la question qu'un formateur d'officine veut vraiment poser : **que
 - **Bornes de période** : `>= from AND < toExclusive`, où `toExclusive` est minuit du lendemain. `<= '2026-03-31'` perd toute la journée du 31.
 - **Écrire le CSS APRÈS le JSX**, en lisant le code réel. Trois fois sur ce projet, un agent a nommé une classe qu'un autre n'a pas écrite, et la dernière fois c'est parti en production.
 - **Ne jamais `git add .`** quand deux chantiers cohabitent dans l'arbre de travail.
+- **Sur ce poste Windows, l'édition de fichier repasse le fichier en CRLF**, et peut ponctuellement corrompre un caractère en octet NUL au milieu d'une chaîne. Le dépôt est en LF. Avant tout commit, repasser les fichiers touchés en LF et vérifier l'absence d'octet NUL — un script Node de quelques lignes suffit (`buf[i] === 0`, `\r\n` → `\n`). Trouvé pour la première fois le 31/08/2026 sur `QuizResults.jsx` : un octet NUL introduit dans une clé React, sans effet visible, mais un fichier binaire-sale ne devrait jamais partir en commit.
 
 ---
 
@@ -589,15 +599,14 @@ Et derrière, la question qu'un formateur d'officine veut vraiment poser : **que
 
 | Chantier | Intérêt | Effort |
 | --- | --- | --- |
-| **Détail des réponses** (§10) | La vraie valeur pédagogique : quoi reprendre en formation | Moyen |
 | Rattacher l'annuaire à une promotion | Referme l'énumération de la route publique (§8) | Moyen |
-| Normaliser espaces et traits d'union dans `nameKey` | Corrige un vrai défaut — **exige sa propre migration** (§8) | Moyen |
-| Tests automatisés | Aucun aujourd'hui ; tout repose sur la vérification manuelle | Moyen |
+| Tableau de bord par officine | Explicitement écarté pour l'instant par l'utilisateur (§14) — à reproposer si le besoin change | Moyen |
+| Tests automatisés côté client | Aucun aujourd'hui ; l'accessibilité se vérifie au lecteur d'écran, pas par une assertion | Moyen |
 | Auto-hébergement des polices | Performance, hors ligne | Faible |
 | Sauvegarde périodique de la base | Filet de sécurité | Faible |
 | Mode révision (réponse dévoilée à chaque question) | Usage entraînement | Faible |
 
-> Les chantiers « tableau de bord des résultats », « liste des quiz du formateur » et « export CSV » de la version précédente de ce document sont **faits** — voir §5 et §8.
+> Les chantiers « tableau de bord des résultats », « liste des quiz du formateur », « export CSV », « détail des réponses », « rattacher une officine » et « normaliser espaces et traits d'union dans `nameKey` » de la version précédente de ce document sont **faits** — voir §5, §8, §13 et §14.
 
 ---
 
@@ -677,3 +686,68 @@ Un quiz peut être **fermé ET expiré**, et lever un seul verrou ne suffit pas.
 Voir §5 (la migration), §8 (le retour arrière et les tests). Ce lot est le seul à toucher aux données.
 
 **Ordre de déploiement recommandé :** lots 1 à 3 d'abord, ils ne touchent pas aux données et se vérifient seuls. Le lot 4 ensuite, **sauvegarde binaire vérifiée en main**, hors séance de formation, et en surveillant les logs de démarrage — la migration y journalise ce qu'elle a réécrit et les doublons qu'elle révèle.
+
+---
+
+## 13. Conserver le détail des réponses — livré le 28 août 2026
+
+La correction complète était déjà calculée à chaque envoi (`POST /api/quiz/:id/submit`), renvoyée à l'apprenant, puis **jetée** : on savait qu'Aya avait fait 3/5, jamais sur quoi. Rien n'a été recalculé — le chantier a consisté à cesser de jeter ce qui existait déjà.
+
+**Table `answers`, pas une colonne JSON sur `results`.** La question la plus utile qu'un formateur pose à cet outil est « quelle question est ratée par tout le monde ? », précisément ce qu'un JSON empêcherait d'agréger. `quiz_id` y est porté directement plutôt que lu par jointure (dénormalisation assumée, tenue à jour par `ON DELETE CASCADE`) : l'agrégat par quiz tient en un seul balayage d'index.
+
+**Deux pièges trouvés en testant, pas en relisant :**
+1. Les réponses sont des **lettres** (`'A'`..`'F'`), pas des index — c'est ce que `normalizeQuestions` produit et ce que `Quiz.jsx` envoie. Un premier essai testait `Number.isInteger(...)`, ce qui aurait vidé tout le détail en silence.
+2. `correct_label` est `NOT NULL`, mais le libellé peut manquer si une option a disparu depuis. Sans repli sur la lettre, ce n'est pas le détail qui aurait échoué mais **tout l'envoi** — l'apprenant n'aurait plus pu rendre sa copie.
+
+**Ce qui est figé, et pourquoi.** `question_text` et les libellés des options le sont, comme `player_name` l'était déjà : les questions restent modifiables après coup (`PATCH /api/quiz/:id`), et une statistique portant sur un énoncé qui a changé ne voudrait rien dire. Quand l'énoncé a bougé entre deux participations, l'écran le **dit** au lieu de mélanger deux libellés sous un même pourcentage.
+
+« Sans réponse » est distingué de « mauvaise réponse » : `given` est `NULLABLE`, jamais une valeur qui se confondrait avec une option choisie — une question sautée par la moitié de la salle est peut-être mal posée, pas mal comprise.
+
+**Deux écrans :** « Ce qu'il faut reprendre » sur les résultats d'un quiz (§4, point 7), questions triées de la plus ratée à la mieux réussie ; et le détail par apprenant, dépliable dans son historique, chargé **à la demande**.
+
+**Rétroactivité, dite et non subie :** les participations antérieures au 28/08 n'ont aucun détail et n'en auront jamais. L'agrégat annonce sur combien de participations il porte plutôt que de laisser croire à un écran vide.
+
+`addResult` écrit le résultat et son détail dans **une seule transaction**. Parité des deux stores vérifiée sur 24 fonctions, mêmes rangs, sortie identique.
+
+---
+
+## 14. Rattacher chaque apprenant à une officine — livré le 31 août 2026
+
+L'officine était encodée à la main dans le titre du quiz (« Meydeba » dans 11 titres sur 15). Elle devient une vraie donnée, portée par l'apprenant, avec la **même** logique anti-doublons que les noms — demande explicite de l'utilisateur.
+
+**Décisions prises avec l'utilisateur, à ne pas re-questionner sans nouvelle demande :**
+
+| Décision | Ce qu'elle exclut |
+| --- | --- |
+| Saisie libre par l'apprenant, protégée par la même machinerie anti-doublons que les noms | Une liste fermée d'officines à choisir |
+| Le formateur affecte lui-même les fiches déjà inscrites (via « Affecter en masse ») | Une migration automatique quelconque |
+| L'officine est **figée sur la participation** (celle du jour) ET portée par la fiche (l'officine actuelle) — qui change d'officine laisse ses anciens résultats à l'ancienne | Tout retro-remplissage de `results.pharmacy_name` depuis la fiche |
+| Obligatoire pour **commencer** le quiz, pas obligatoire de correspondre à une officine connue | Bloquer l'apprenant dont l'officine n'existe pas encore dans l'annuaire |
+| Trois usages : filtrer l'annuaire, grouper les résultats d'un quiz, colonne CSV | Un tableau comparatif entre officines — explicitement écarté, à reproposer si le besoin change (§11) |
+
+### Schéma — additif, aucune donnée réécrite
+
+Voir §5 pour le détail des tables et index. `PRAGMA user_version` ne bouge pas (reste à 2) : rien n'est réécrit, `NULL` est la bonne valeur pour les participations antérieures à ce déploiement.
+
+### Deux pièges évités, trouvés en testant
+
+1. **La route de suggestion des noms refuse les chiffres** (`CLE_SUGGESTION`, anti-énumération, gardée telle quelle). Une seconde règle `CLE_SUGGESTION_OFFICINE` les autorise — sans quoi « Pharmacie des 2 Plateaux » aurait suggéré silencieusement `[]` (un `200` vide, un échec parfaitement muet). Même seau anti-abus que les noms (fabrique `routeSuggestion`), capacité portée de 20 à 30.
+2. **Les mots ultra-fréquents des noms d'officines** (« pharmacie », « nouvelle »…) auraient fait sur-fusionner la règle R3 de `groupesProbables` (fondée sur le NOMBRE de mots utiles d'une fiche : « La Nouvelle Pharmacie » a 3 mots mais un contenu informatif nul). `motsVides` (`server/src/mots-vides-officine.js`, **aucun chiffre** — « 2 » distingue de vraies officines) n'est injecté que dans R3 ; R1 et R2 restent inchangées, sur preuve que les mots vides les rendraient fusionnantes à tort.
+
+### Parcours apprenant : `Welcome.jsx` en deux étapes
+
+Voir §4. `ChampAssiste.jsx` extrait la mécanique de suggestion/verrou (comportement vérifié NUL au portage), pour l'utiliser sur les deux champs sans la dupliquer — il ne porte **aucune région live propre**, l'écran appelant garde l'unique `role="status"` et l'unique `role="alert"`.
+
+L'obligation de saisir une officine vit **côté client uniquement** : `POST /submit` garde `pharmacyName` facultatif. Sans ce choix, une session commencée avant ce déploiement (déjà sur l'étape quiz, jamais passée par le nouveau `Welcome`) aurait reçu un `400` et perdu ses réponses en cours.
+
+### Espace formateur
+
+`Officines.jsx` / `FicheOfficine.jsx` sont des **doublons** de l'annuaire apprenants, pas des factorisations : ils vont diverger, et ce sont les écrans les moins risqués derrière un mot de passe. `AffecterOfficines.jsx` boucle **séquentiellement** sur `PATCH /learners/:id` (un seul écrivain SQLite, échec imputable à une fiche précise) — pas de route de lot pour quelques dizaines d'appels. La fusion de deux officines déplace apprenants **et** participations, transactionnel.
+
+### Limite assumée, pas un bug
+
+Au moment du déploiement, **aucun apprenant n'a d'officine** : le champ est nouveau. L'écran Officines affiche un rappel tant qu'il existe des officines et qu'aucun apprenant n'y est rattaché nulle part, pointant vers « Affecter en masse ».
+
+### Ce qui reste à vérifier à l'usage
+
+Voir §9. La fusion de deux officines et l'affectation en masse n'ont pas été rejouées en production (mot de passe formateur, jamais saisi par l'assistant) — seulement en local et par script.
