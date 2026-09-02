@@ -3,8 +3,8 @@
 **Dernière mise à jour :** 2 septembre 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit déployé :** `6716111` — *Sauvegardes automatiques du fichier SQLite, en complement de celle native de Railway* (§16)
-**Non encore déployé à cette mise à jour :** la réorganisation de la navigation formateur (§17) — code écrit, testé et vérifié, en attente du feu vert pour le push. Depuis la mise à jour du 28/08 (§12), cinq chantiers de plus ont été livrés : le détail des réponses (§13), le rattachement à une officine (§14), la navigation depuis une officine (§15), les sauvegardes automatiques (§16), et la réorganisation de la navigation formateur (§17, ci-dessus, pas encore en ligne).
+**Dernier commit déployé :** `0d88f57` — *Reorganiser la navigation formateur d'apres un mockup Claude Design* (§17)
+**Non encore déployé à cette mise à jour :** `dbee414` — « Mes quiz » n'est plus un tableau mais une liste de cartes (voir §17, sous-section dédiée) : le tableau dense déployé dans `0d88f57` forçait un défilement horizontal en production, l'utilisateur l'a refusé même une fois le défilement rendu visible (`6eba99e`, superseded par `dbee414`, gardé pour l'historique). Code écrit, testé et vérifié, en attente du feu vert pour le push.
 
 ---
 
@@ -86,7 +86,7 @@ kemet-quizz/
 │       ├── pages/
 │       │   ├── Dashboard.jsx        formateur : tableau de bord, index de l'espace formateur (§17)
 │       │   ├── CreationQuiz.jsx     dépôt du PDF (enveloppe de UploadPDF), route /formateur/nouveau
-│       │   ├── MesQuiz.jsx          la liste des quiz en tableau dense, avec recherche
+│       │   ├── MesQuiz.jsx          la liste des quiz, en cartes (.quiz-list), avec recherche
 │       │   ├── PartageQuiz.jsx      QR, lien, WhatsApp, remise en ligne
 │       │   ├── RelectureQuiz.jsx    relecture + brouillon local des corrections
 │       │   ├── OfficinesEspace.jsx  formateur : officines en maître-détail (§17), route /formateur/officines
@@ -126,7 +126,7 @@ Depuis le 02/09/2026 (§17), tout l'espace formateur partage une **barre à 4 on
 6. **Génération** — trois étapes affichées : lecture du document (progression réelle des pages), rédaction, vérification. Réponse en flux NDJSON.
 7. **Relecture** (`ReviewQuestions`) — chaque question est éditable ; cliquer une option la désigne comme bonne réponse ; bouton de régénération par question. Bandeau d'avertissement si des questions ont été écartées à la validation.
 8. **Partage** — QR code, lien copiable, envoi WhatsApp, fermeture/réouverture du quiz.
-9. **Mes quiz** (`MesQuiz`, onglet de la barre persistante) — depuis §17, un **tableau dense** (Quiz / Officine / Score moyen / Lien / Actions) plutôt qu'une liste : QR miniature cliquable + « Copier » pour un quiz en ligne, QR grisé + « Réouvrir » pour un quiz fermé, lien « Prolonger le lien » pour un quiz expiré — trois **états réels** de la même ligne, pas trois lignes figées.
+9. **Mes quiz** (`MesQuiz`, onglet de la barre persistante) — depuis §17, une **liste de cartes** (`.quiz-list`), une par quiz : titre + état, puis officine / score / QR + action contextuelle (Copier en ligne, Réouvrir fermé, Prolonger le lien expiré) / Résultats + Ouvrir, qui s'empilent en hauteur (`flex-wrap`) plutôt que de déborder en largeur. Un **tableau dense** avait été essayé d'abord (mockup) puis abandonné le 03/09 : il forçait un défilement horizontal en production, refusé par l'utilisateur.
 10. **Résultats** (`QuizResults`, un quiz à la fois) — qui a répondu, quel score, quand, la moyenne. Depuis §17, mise en page à **deux colonnes** : colonne principale (fil d'Ariane, résumé, exports, tableau des réponses avec officine sur chaque ligne), colonne latérale (« Ce qu'il faut reprendre », depuis le 28/08 §13). Deux exports : `.csv` (séparateur `;`, BOM UTF-8, colonne Officine depuis le 31/08) et depuis §17 un **récapitulatif PDF** (jsPDF, entièrement côté client, même recette que `Results.jsx`).
 11. **Officines** (`OfficinesEspace`, route `/formateur/officines`, onglet de la barre persistante depuis §17) — disposition **maître-détail** : liste filtrable à gauche, détail de l'officine choisie à droite (apprenants rattachés, moyenne, dernier passage), avec accès à la fusion de doublons, l'affectation en masse et l'historique de résultats (§15) — ces trois flux sont réutilisés tels quels, pas reconstruits.
 12. **Apprenants** (`Apprenants` et son aiguillage interne) — l'annuaire avec la moyenne et le nombre d'évaluations de chacun ; l'historique d'un apprenant, filtrable par **deux dates saisies** et exportable en `.csv` (la période appliquée est exportée telle quelle, colonne Officine comprise) ; l'entretien de l'annuaire : créer une fiche, corriger un nom, **sortir une fiche de quarantaine** (bascule `suggestible`), fusionner deux doublons. Depuis §17, les officines n'y vivent plus (voir point 11) — le lien qui y menait a été retiré.
@@ -158,7 +158,7 @@ Depuis le 02/09/2026 (§17), tout l'espace formateur partage une **barre à 4 on
 | `GET /api/quiz/:id/full` | ✅ | Quiz **avec** les réponses, pour la relecture |
 | `PATCH /api/quiz/:id` | ✅ | `{ title?, questions?, closed?, expiresInHours?, singleAttempt? }` |
 | `POST /api/quiz/:id/regenerate/:index` | ✅ | Régénère une seule question |
-| `GET /api/quizzes` | ✅ | Liste des quiz, du plus récent au plus ancien, avec le nombre de réponses. Depuis §17, enrichie de `avgPercent`/`topPharmacyName`/`pharmacyCount` pour le tableau dense de « Mes quiz » |
+| `GET /api/quizzes` | ✅ | Liste des quiz, du plus récent au plus ancien, avec le nombre de réponses. Depuis §17, enrichie de `avgPercent`/`topPharmacyName`/`pharmacyCount` pour la liste de cartes de « Mes quiz » |
 | `GET /api/dashboard` | ✅ | Depuis §17. `{ avgPercent, totalResponses, totalLearners, activePharmacies }`, tous quiz confondus — alimente le tableau de bord |
 | `GET /api/quiz/:id/results` | ✅ | Scores enregistrés pour un quiz |
 | `GET /api/learners` | ✅ | Annuaire : chaque apprenant avec `attempts`, `avgPercent`, `lastSubmittedAt`. Période optionnelle |
@@ -832,7 +832,7 @@ Le mockup ne couvrait que 8 écrans sur les 11 réels, et contredisait un choix 
 
 **Nouveau quiz** (`UploadPDF.jsx`) : mise en page à deux colonnes dès qu'un fichier est choisi (document à gauche, réglages à droite) ; état vide inchangé au pixel près. Logique métier non touchée.
 
-**Mes quiz** (`MesQuiz.jsx`) : passe d'une liste à un **tableau dense**, avec trois états réels par ligne (en ligne / fermé / expiré) plutôt que trois lignes figées comme le montrait le mockup. `GET /api/quizzes` enrichi de `avgPercent`/`topPharmacyName`/`pharmacyCount` pour l'alimenter.
+**Mes quiz** (`MesQuiz.jsx`) : passe d'une liste à un **tableau dense**, avec trois états réels par ligne (en ligne / fermé / expiré) plutôt que trois lignes figées comme le montrait le mockup. `GET /api/quizzes` enrichi de `avgPercent`/`topPharmacyName`/`pharmacyCount` pour l'alimenter. **⚠️ Abandonné dès le lendemain en production — voir la note du 03/09 en fin de section : ce tableau forçait un défilement horizontal, remplacé par une liste de cartes.**
 
 **Résultats** (`QuizResults.jsx`) : deux colonnes (principale : fil d'Ariane, résumé, tableau ; latérale : « Ce qu'il faut reprendre »). **Nouveauté confirmée avec l'utilisateur** : export PDF récapitulatif, entièrement côté client avec jsPDF (déjà une dépendance, déjà utilisée par `Results.jsx`) — aucune route serveur neuve.
 
@@ -858,3 +858,13 @@ La vérification a trouvé, puis (pour partie) corrigé, plusieurs cibles tactil
 ### Vérifié
 
 `npm test` (11/11, parité 36 fonctions comprise) et `npm run build`, exécutés plusieurs fois dont une fois personnellement après le dernier correctif manuel. Parcours complet **rejoué en navigateur** sur le poste de développement pour tout ce qui est public (accueil en deux étapes, passation, envoi, correction avec l'accordéon replié/déplié) — aucune erreur console, comportement conforme. Les écrans formateur (tableau de bord, nouveau quiz, mes quiz, résultats, officines) n'ont **pas** été rejoués en navigateur par l'assistant (mot de passe formateur, jamais saisi — même règle que §9/§14) : vérifiés par lecture de code et par les agents de vérification, pas par un clic réel. À confirmer par l'utilisateur à l'usage, en particulier la mise en page à 375 px des deux écrans qui n'avaient pas de version mobile dans le mockup (tableau « Mes quiz », maître-détail « Officines »).
+
+### 03/09/2026 — « Mes quiz » : le tableau dense abandonné, le doute ci-dessus confirmé
+
+Exactement le doute relevé juste au-dessus : l'utilisateur a signalé en production (capture d'écran à l'appui) que Score moyen/Lien/Actions étaient hors champ sur `.quiz-table`. Une première correction (ombre de défilement CSS sans JS sur `.quiz-table-scroll`, commit `6eba99e`) a confirmé — question posée puis répondue par l'utilisateur — que le contenu était bien atteignable en faisant défiler, donc pas un bug de fond. **L'utilisateur a quand même refusé ce compromis** (« je ne veux pas avoir à le faire »), et a en plus refusé de perdre les raccourcis par ligne (QR, Copier/Réouvrir/Prolonger, Résultats, Ouvrir) en revenant au simple lien plein-ligne d'avant tout ce chantier.
+
+**Solution retenue (commit `dbee414`)** : `MesQuiz.jsx` passe du `<table className="quiz-table">` à une liste de cartes (`<ul className="quiz-list">`, une `<li className="card quiz-card">` par quiz). La rangée d'actions (`.quiz-card-row`) est en `flex-wrap` : le contenu s'empile en **hauteur** plutôt que de déborder en **largeur**, sans aucune media query dédiée — le même CSS absorbe 320 px comme 1280 px. Rien n'est perdu : mêmes informations, mêmes actions, seulement réorganisées. Deux `<span className="sr-only">` (« Officine : », « Score moyen : ») compensent la sémantique de colonne que le `<table>` donnait gratuitement via `<th scope="col">`.
+
+`QuizResults.jsx` **garde** `.quiz-table`/`.quiz-table-scroll` (y compris l'ombre de défilement du commit `6eba99e`, pas perdue) : son tableau à 4 colonnes texte, sans action par ligne, n'a pas le même risque — un débordement y coûte une lecture à faire défiler, jamais un contrôle inatteignable. Repensé si le même signalement revient sur cet écran, pas avant.
+
+**Vérifié réellement, pas seulement relu** : le tableau précédent avait été vérifié par lecture de code et par des agents (voir plus haut), et le problème n'avait pas été vu avant la production — cette fois, une page de test isolée a été servie par le serveur de développement (`client/public/`, supprimée ensuite) avec les données réellement défavorables (« Pharmacie MEDEBA +1 », un titre de quiz extra-long, un quiz sans réponse, fermé, expiré), mesurée à 1280/720/375/320 px : aucun débordement à aucun de ces paliers, capture d'écran à l'appui. Leçon retenue en plus de celle sur les rapports d'agents (plus haut) : pour un écran derrière le mot de passe formateur, une page de test isolée avec les VRAIES données vaut mieux qu'une relecture de CSS, même soigneuse.
