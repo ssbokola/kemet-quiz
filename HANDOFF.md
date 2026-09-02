@@ -1,10 +1,10 @@
 # Kemet Quiz — Handoff technique
 
-**Dernière mise à jour :** 31 août 2026
+**Dernière mise à jour :** 2 septembre 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit déployé :** `de29cdc` — *Naviguer depuis une officine : tous ses resultats, filtrables et exportables* (§15)
-**Non encore déployé à cette mise à jour :** les sauvegardes automatiques (§16) — code écrit et vérifié, en attente du feu vert pour le push. Depuis la mise à jour du 28/08 (§12), quatre chantiers de plus ont été livrés : le détail des réponses (§13), le rattachement à une officine (§14), la navigation depuis une officine (§15) et les sauvegardes automatiques (§16, ci-dessus).
+**Dernier commit déployé :** `6716111` — *Sauvegardes automatiques du fichier SQLite, en complement de celle native de Railway* (§16)
+**Non encore déployé à cette mise à jour :** la réorganisation de la navigation formateur (§17) — code écrit, testé et vérifié, en attente du feu vert pour le push. Depuis la mise à jour du 28/08 (§12), cinq chantiers de plus ont été livrés : le détail des réponses (§13), le rattachement à une officine (§14), la navigation depuis une officine (§15), les sauvegardes automatiques (§16), et la réorganisation de la navigation formateur (§17, ci-dessus, pas encore en ligne).
 
 ---
 
@@ -76,18 +76,20 @@ kemet-quizz/
 │       │   ├── FicheApprenant.jsx   formateur : renommer, (dé)suggérer, fusionner
 │       │   ├── DoublonsProbables.jsx formateur : groupes de fiches à réunir — PARAMÉTRÉ, réutilisé par les officines
 │       │   ├── ChampAssiste.jsx     champ à suggestion + verrou, extrait de Welcome (nom ET officine)
-│       │   ├── Officines.jsx        formateur : annuaire des officines (créer, rechercher)
-│       │   ├── FicheOfficine.jsx    formateur : renommer, fusionner une officine
 │       │   ├── AffecterOfficines.jsx formateur : rattacher en masse les fiches sans officine
 │       │   ├── OfficineHistorique.jsx formateur : résultats d'une officine, tous quiz confondus
+│       │   │   (ces deux-là sont réutilisés DEPUIS OfficinesEspace.jsx — voir pages/, §17 —
+│       │   │    Officines.jsx et FicheOfficine.jsx, eux, ont été retirés le 02/09/2026, remplacés)
 │       │   ├── Welcome.jsx          accueil apprenant, DEUX étapes : nom, puis officine
 │       │   ├── Quiz.jsx             passation, thème encre
 │       │   └── Results.jsx          score, correction, export PDF
 │       ├── pages/
-│       │   ├── CreationQuiz.jsx     dépôt du PDF (enveloppe de UploadPDF)
-│       │   ├── MesQuiz.jsx          la liste des quiz, avec recherche
+│       │   ├── Dashboard.jsx        formateur : tableau de bord, index de l'espace formateur (§17)
+│       │   ├── CreationQuiz.jsx     dépôt du PDF (enveloppe de UploadPDF), route /formateur/nouveau
+│       │   ├── MesQuiz.jsx          la liste des quiz en tableau dense, avec recherche
 │       │   ├── PartageQuiz.jsx      QR, lien, WhatsApp, remise en ligne
 │       │   ├── RelectureQuiz.jsx    relecture + brouillon local des corrections
+│       │   ├── OfficinesEspace.jsx  formateur : officines en maître-détail (§17), route /formateur/officines
 │       │   └── QuizPage.jsx         welcome → quiz → results
 │       └── assets/           hero.png, react.svg, vite.svg — AUCUN n'est référencé
 └── server/
@@ -115,14 +117,19 @@ kemet-quizz/
 
 ### Formateur — `/`
 
+Depuis le 02/09/2026 (§17), tout l'espace formateur partage une **barre à 4 onglets persistants** (`AppBar`, prop `tabs`) : Tableau de bord · Nouveau quiz · Mes quiz · Officines — défilante horizontalement sous 720 px, jamais un onglet qui disparaît.
+
 1. **Porte d'accès** (`AdminGate`) — mot de passe conservé en `sessionStorage` sous `kemet-quiz-admin-pw`, jamais en `localStorage`.
-2. **Dépôt** (`UploadPDF`) — glisser-déposer ou parcourir. Le PDF est lu **dans le navigateur** par pdf.js : seul le texte extrait part sur le réseau (~100 Ko au lieu de 16 Mo). Repli sur l'envoi du binaire si le PDF est scanné (moins de 200 caractères extraits).
-3. **Réglages** — titre pré-rempli et modifiable · nombre de questions (5/10/15/20/30) · niveau (facile / moyen / difficile) · diffusion (1 tentative ou libre) · expiration (sans limite / 24 h / 7 jours).
-4. **Génération** — trois étapes affichées : lecture du document (progression réelle des pages), rédaction, vérification. Réponse en flux NDJSON.
-5. **Relecture** (`ReviewQuestions`) — chaque question est éditable ; cliquer une option la désigne comme bonne réponse ; bouton de régénération par question. Bandeau d'avertissement si des questions ont été écartées à la validation.
-6. **Partage** — QR code, lien copiable, envoi WhatsApp, fermeture/réouverture du quiz.
-7. **Résultats** (`QuizResults`, un quiz à la fois) — qui a répondu, quel score, quand, la moyenne, un export `.csv` (séparateur `;`, BOM UTF-8, colonne Officine depuis le 31/08) ; **« Ce qu'il faut reprendre »** (depuis le 28/08, §13) : les questions du quiz triées de la plus ratée à la mieux réussie ; et depuis le 31/08 (§14), les réponses se **regroupent par officine** dès que le quiz en compte au moins deux — sans moyenne par groupe, ce n'est pas un comparatif.
-8. **Apprenants** (`Apprenants` et son aiguillage interne) — l'annuaire avec la moyenne et le nombre d'évaluations de chacun ; l'historique d'un apprenant, filtrable par **deux dates saisies** et exportable en `.csv` (la période appliquée est exportée telle quelle, colonne Officine comprise) ; l'entretien de l'annuaire : créer une fiche, corriger un nom, **sortir une fiche de quarantaine** (bascule `suggestible`), fusionner deux doublons ; et depuis le 31/08, l'**annuaire des officines** (créer, fusionner, rattacher en masse) — voir §14.
+2. **Tableau de bord** (`Dashboard`, index de `/formateur` depuis §17) — un bandeau de 4 chiffres clés (`GET /api/dashboard` : score moyen global, réponses, apprenants, officines actives), un lien de dépôt, les derniers apprenants et les officines actives avec liens « Tout voir ».
+4. **Dépôt** (`UploadPDF`, route `/formateur/nouveau` depuis §17) — glisser-déposer ou parcourir, en deux colonnes dès qu'un fichier est choisi (document à gauche, réglages à droite). Le PDF est lu **dans le navigateur** par pdf.js : seul le texte extrait part sur le réseau (~100 Ko au lieu de 16 Mo). Repli sur l'envoi du binaire si le PDF est scanné (moins de 200 caractères extraits).
+5. **Réglages** — titre pré-rempli et modifiable · nombre de questions (5/10/15/20/30) · niveau (facile / moyen / difficile) · diffusion (1 tentative ou libre) · expiration (sans limite / 24 h / 7 jours).
+6. **Génération** — trois étapes affichées : lecture du document (progression réelle des pages), rédaction, vérification. Réponse en flux NDJSON.
+7. **Relecture** (`ReviewQuestions`) — chaque question est éditable ; cliquer une option la désigne comme bonne réponse ; bouton de régénération par question. Bandeau d'avertissement si des questions ont été écartées à la validation.
+8. **Partage** — QR code, lien copiable, envoi WhatsApp, fermeture/réouverture du quiz.
+9. **Mes quiz** (`MesQuiz`, onglet de la barre persistante) — depuis §17, un **tableau dense** (Quiz / Officine / Score moyen / Lien / Actions) plutôt qu'une liste : QR miniature cliquable + « Copier » pour un quiz en ligne, QR grisé + « Réouvrir » pour un quiz fermé, lien « Prolonger le lien » pour un quiz expiré — trois **états réels** de la même ligne, pas trois lignes figées.
+10. **Résultats** (`QuizResults`, un quiz à la fois) — qui a répondu, quel score, quand, la moyenne. Depuis §17, mise en page à **deux colonnes** : colonne principale (fil d'Ariane, résumé, exports, tableau des réponses avec officine sur chaque ligne), colonne latérale (« Ce qu'il faut reprendre », depuis le 28/08 §13). Deux exports : `.csv` (séparateur `;`, BOM UTF-8, colonne Officine depuis le 31/08) et depuis §17 un **récapitulatif PDF** (jsPDF, entièrement côté client, même recette que `Results.jsx`).
+11. **Officines** (`OfficinesEspace`, route `/formateur/officines`, onglet de la barre persistante depuis §17) — disposition **maître-détail** : liste filtrable à gauche, détail de l'officine choisie à droite (apprenants rattachés, moyenne, dernier passage), avec accès à la fusion de doublons, l'affectation en masse et l'historique de résultats (§15) — ces trois flux sont réutilisés tels quels, pas reconstruits.
+12. **Apprenants** (`Apprenants` et son aiguillage interne) — l'annuaire avec la moyenne et le nombre d'évaluations de chacun ; l'historique d'un apprenant, filtrable par **deux dates saisies** et exportable en `.csv` (la période appliquée est exportée telle quelle, colonne Officine comprise) ; l'entretien de l'annuaire : créer une fiche, corriger un nom, **sortir une fiche de quarantaine** (bascule `suggestible`), fusionner deux doublons. Depuis §17, les officines n'y vivent plus (voir point 11) — le lien qui y menait a été retiré.
 
 > **La moyenne est la moyenne des POURCENTAGES**, pas `Σscore / Σtotal` : chaque évaluation compte pareil, un 5/5 pèse autant qu'un 25/30. C'est un choix explicite de l'utilisateur. Elle n'est jamais affichée seule, toujours avec le nombre d'évaluations — non pondérée, elle est fragile sur peu de mesures.
 
@@ -138,7 +145,7 @@ kemet-quizz/
    **Pourquoi deux étapes et non un seul écran à deux champs** : mesuré sur le titre de production le plus long à 375×667, verrouiller les deux champs à la fois dépasse le budget d'espace libre que `.welcome` (`space-between`) laisse au-dessus du bouton, et l'aurait déplacé — interdit par la règle « zéro pixel » de cet écran (voir l'en-tête de `Welcome.jsx`). L'officine reste **facultative côté serveur** (`POST /submit`) : une session commencée avant ce déploiement n'est jamais passée par cette étape, et `QuizPage` saute `Welcome` à la reprise — un 400 sur `pharmacyName` manquant aurait enfermé ces apprenants avec leurs réponses déjà en cours.
 2. **Passation** (`Quiz`) — thème encre (`document.body` reçoit la classe `theme-ink`), une question par écran, **pas d'auto-avance**. Barre segmentée cliquable, feuille « toutes les questions », écran de récapitulatif final qui nomme les questions manquantes, modale de confirmation avant envoi.
    Raccourcis clavier : `A`–`F` ou `1`–`6` pour répondre (le nombre d'options va de 2 à 6 ; A–D est le cas nominal, pas le contrat), `←` `→` `Entrée` pour naviguer, `Escape` pour fermer.
-3. **Résultats** (`Results`) — score animé dans un anneau, confettis au-delà de 80 %, correction question par question avec explication, export PDF, partage WhatsApp, bouton « Refaire » si le quiz autorise plusieurs tentatives.
+3. **Résultats** (`Results`) — score animé dans un anneau, confettis au-delà de 80 %, export PDF, partage WhatsApp (déjà tous les deux en place avant §17, non reconstruits), bouton « Refaire » si le quiz autorise plusieurs tentatives. Depuis §17, le détail question par question est **replié par défaut** derrière « Afficher le détail question par question » (bouton, `aria-expanded`), les erreurs mises en avant en premier — auparavant tout était montré d'un bloc.
 
 ---
 
@@ -151,7 +158,8 @@ kemet-quizz/
 | `GET /api/quiz/:id/full` | ✅ | Quiz **avec** les réponses, pour la relecture |
 | `PATCH /api/quiz/:id` | ✅ | `{ title?, questions?, closed?, expiresInHours?, singleAttempt? }` |
 | `POST /api/quiz/:id/regenerate/:index` | ✅ | Régénère une seule question |
-| `GET /api/quizzes` | ✅ | Liste des quiz, du plus récent au plus ancien, avec le nombre de réponses |
+| `GET /api/quizzes` | ✅ | Liste des quiz, du plus récent au plus ancien, avec le nombre de réponses. Depuis §17, enrichie de `avgPercent`/`topPharmacyName`/`pharmacyCount` pour le tableau dense de « Mes quiz » |
+| `GET /api/dashboard` | ✅ | Depuis §17. `{ avgPercent, totalResponses, totalLearners, activePharmacies }`, tous quiz confondus — alimente le tableau de bord |
 | `GET /api/quiz/:id/results` | ✅ | Scores enregistrés pour un quiz |
 | `GET /api/learners` | ✅ | Annuaire : chaque apprenant avec `attempts`, `avgPercent`, `lastSubmittedAt`. Période optionnelle |
 | `GET /api/learners/:id/history` | ✅ | Historique borné par dates + moyenne de la période |
@@ -188,7 +196,7 @@ Motif historique : les gros PDF provoquaient des `502` (`Request aborted` dans m
 
 ### Stockage
 
-Tout passe par `server/src/db.js`, qui expose **35 fonctions** — les quiz et les résultats, l'annuaire d'apprenants, le détail des réponses (§13 : `listQuestionStats`, `listResultAnswers`), l'annuaire des officines (§14 : `suggestPharmacies`, `resolvePharmacy`, `ensurePharmacy`, `createPharmacy`, `updatePharmacy`, `getPharmacy`, `listPharmacies`, `mergePharmacies`, `listDuplicatePharmacyCandidates`, `setLearnerPharmacy`) et depuis le 31/08 les résultats d'une officine tous quiz confondus (§15 : `listPharmacyHistory`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 35 fonctions, **dans le même ordre** — c'est `parite.test.js` qui le garantit à chaque ajout. `server/src/sauvegarde.js` (§16) fait délibérément EXCEPTION à ce compte : il n'ajoute rien aux exports de l'un ou l'autre store, précisément pour ne courir aucun risque sur cette parité.
+Tout passe par `server/src/db.js`, qui expose **36 fonctions** — les quiz et les résultats, l'annuaire d'apprenants, le détail des réponses (§13 : `listQuestionStats`, `listResultAnswers`), l'annuaire des officines (§14 : `suggestPharmacies`, `resolvePharmacy`, `ensurePharmacy`, `createPharmacy`, `updatePharmacy`, `getPharmacy`, `listPharmacies`, `mergePharmacies`, `listDuplicatePharmacyCandidates`, `setLearnerPharmacy`), les résultats d'une officine tous quiz confondus (§15 : `listPharmacyHistory`) et depuis le 02/09 les chiffres du tableau de bord (§17 : `getDashboardStats`). `index.js` n'écrit **jamais** en SQL directement, et `server/src/db-memory.js` expose les mêmes 36 fonctions, **dans le même ordre** — c'est `parite.test.js` qui le garantit à chaque ajout. `server/src/sauvegarde.js` (§16) fait délibérément EXCEPTION à ce compte : il n'ajoute rien aux exports de l'un ou l'autre store, précisément pour ne courir aucun risque sur cette parité.
 
 Cinq tables :
 
@@ -587,7 +595,7 @@ Sur ce modèle, le raisonnement est **actif par défaut** et puise dans le même
 
 ## 10. Prochain chantier
 
-**Rien n'est décidé pour l'instant.** Tout ce qui a été demandé jusqu'ici est livré et en production : conserver le détail des réponses (§13), rattacher chaque apprenant à une officine (§14), naviguer depuis une officine vers tous ses résultats (§15), sauvegardes automatiques (§16). Piocher dans §11 « Autres pistes » à la prochaine demande, ou attendre la prochaine remontée du terrain.
+**Rien n'est décidé pour l'instant.** Tout ce qui a été demandé jusqu'ici est fait : conserver le détail des réponses (§13), rattacher chaque apprenant à une officine (§14), naviguer depuis une officine vers tous ses résultats (§15), sauvegardes automatiques (§16), réorganisation de la navigation formateur d'après un mockup Claude Design (§17 — voir l'en-tête du document pour l'état exact du déploiement à la date de cette mise à jour). Piocher dans §11 « Autres pistes » à la prochaine demande, ou attendre la prochaine remontée du terrain.
 
 ### Pièges déjà payés sur ce projet, à ne pas repayer
 
@@ -795,3 +803,58 @@ En complément, **`server/src/sauvegarde.js`** écrit périodiquement un fichier
 **Limite assumée, à surveiller si le volume de données change d'échelle :** `node:sqlite` est entièrement synchrone — le temps d'un `VACUUM INTO`, le serveur ne répond à aucune requête. Sans gravité sur une base de quelques mégaoctets et une poignée de formateurs.
 
 **Vérifié :** exécution réelle sur une base de test (écriture, relecture, rétention qui élimine bien les plus anciennes au-delà de la limite, y compris avec un dossier de destination à espace dans son chemin), `npm test` (11/11, parité intacte) et `npm run build` après l'ajout — aucune régression. Non vérifié : un cycle complet de 24 h en conditions réelles sur Railway, faute de délai — à confirmer par les journaux de démarrage (`Sauvegarde SQLite écrite : …`) après quelques jours en production.
+
+---
+
+## 17. Réorganisation de la navigation formateur (mockup Claude Design) — 2 septembre 2026
+
+### D'où ça vient
+
+L'utilisateur a mocké une nouvelle organisation des écrans formateur dans Claude Design (claude.ai/design) et exporté un bundle de prise en main (« handoff ») pour ce dépôt. Le fichier central, `Kemet Quiz - Direction retenue.dc.html`, était accompagné d'un design-system nommé « Nocturne » (fond sombre, accent violet, Inter) — mais **le fichier ne l'utilise pas** : aucune classe Nocturne, aucune police Inter, et chaque écran redéfinit les tokens or/encre/papier déjà en place, recopiés à l'identique. Ce n'est donc **pas un rebranding** : c'est une réorganisation de la navigation et de la mise en page, à charte inchangée. Un second fichier du même bundle (« Refonte ») le dit explicitement dans son texte d'intro : *« l'or & encre affinés sans changer d'esprit »*.
+
+⚠️ **`/design-login` n'est pas disponible dans cet environnement** — l'import direct depuis claude.ai/design (MCP `DesignSync`) a échoué avec une demande d'autorisation impossible à satisfaire ici. L'utilisateur a téléchargé et fourni le bundle exporté à la main (`KEMET Quiz UXUI Improvement-handoff.zip`, à la racine du dépôt, **non suivi par git** — à supprimer ou déplacer quand il ne sert plus).
+
+### Décisions prises avec l'utilisateur avant d'implémenter
+
+Le mockup ne couvrait que 8 écrans sur les 11 réels, et contredisait un choix UX déjà écrit dans le code sur un point : trois décisions ont été tranchées avant tout code —
+
+1. **Pas d'avance automatique.** Le mockup montre un interrupteur « Avance automatique » sur l'écran de passation ; `Quiz.jsx` documentait déjà, avant ce chantier, que le participant garde la main. **Ignoré délibérément**, comportement actuel conservé.
+2. **Écrans non couverts par le mockup, laissés intacts** : `PartageQuiz.jsx`, `Welcome.jsx` (accueil en deux étapes), et l'entretien de l'annuaire des apprenants (`AnnuaireApprenants`, `FicheApprenant`, doublons et historique côté apprenants).
+3. **Deux boutons du mockup impliquant du travail neuf** : export PDF récapitulatif d'un quiz (construit, voir plus bas) et partage WhatsApp du résultat d'un apprenant — **celui-ci existait déjà** (`Results.jsx`, fonction `handleShare`, avant ce chantier) : la demande initiale le croyait manquant, corrigé après vérification du code.
+
+### Ce qui a changé
+
+**Navigation.** `AppBar.jsx` accepte une prop `tabs` ; une barre à 4 onglets persistants (Tableau de bord / Nouveau quiz / Mes quiz / Officines) habille tout l'espace formateur, défilante horizontalement sous 720 px — correction assumée d'une incohérence du mockup, dont la version mobile faisait disparaître l'onglet « Officines ».
+
+**Routes** (`client/src/App.jsx`, `chemins.js`) : `/formateur` devient l'index du **Tableau de bord** (nouveau, `Dashboard.jsx`) ; `CreationQuiz` migre vers `/formateur/nouveau` ; `/formateur/officines` est une route neuve (`OfficinesEspace.jsx`) ; les autres routes ne bougent pas.
+
+**Tableau de bord** (`Dashboard.jsx`, nouveau) : bandeau de 4 chiffres (score moyen, réponses, apprenants, officines actives) via la nouvelle route `GET /api/dashboard` / fonction store `getDashboardStats()` (36ᵉ fonction, même rang dans les deux stores) ; derniers apprenants et officines actives réutilisent `GET /api/learners`/`GET /api/pharmacies` tels quels.
+
+**Nouveau quiz** (`UploadPDF.jsx`) : mise en page à deux colonnes dès qu'un fichier est choisi (document à gauche, réglages à droite) ; état vide inchangé au pixel près. Logique métier non touchée.
+
+**Mes quiz** (`MesQuiz.jsx`) : passe d'une liste à un **tableau dense**, avec trois états réels par ligne (en ligne / fermé / expiré) plutôt que trois lignes figées comme le montrait le mockup. `GET /api/quizzes` enrichi de `avgPercent`/`topPharmacyName`/`pharmacyCount` pour l'alimenter.
+
+**Résultats** (`QuizResults.jsx`) : deux colonnes (principale : fil d'Ariane, résumé, tableau ; latérale : « Ce qu'il faut reprendre »). **Nouveauté confirmée avec l'utilisateur** : export PDF récapitulatif, entièrement côté client avec jsPDF (déjà une dépendance, déjà utilisée par `Results.jsx`) — aucune route serveur neuve.
+
+**Officines** (`OfficinesEspace.jsx`, nouveau, remplace l'ancien accès imbriqué) : disposition maître-détail. L'aiguillage « officines » qui vivait dans `Apprenants.jsx` (liste, fiche, doublons, affectation en masse, historique — §14/§15) a **déménagé ici en bloc** ; `Apprenants.jsx` et `AnnuaireApprenants.jsx` ont perdu leurs branches et leur lien devenus redondants. `Officines.jsx` et `FicheOfficine.jsx` (les anciens écrans autonomes) sont devenus orphelins puis **supprimés** le 02/09 après vérification qu'aucun fichier ne les importait plus.
+
+**Correction apprenant** (`Results.jsx`) : le détail question par question passe derrière un accordéon replié par défaut (« Afficher/Masquer le détail question par question », `aria-expanded`), les erreurs mises en avant. Export PDF et partage WhatsApp, déjà en place, non reconstruits.
+
+**Passation** (`Quiz.jsx`) : comparé au mockup, aucune différence retenue à part l'avance automatique (refusée, décision 1) — l'écran actuel correspondait déjà de près.
+
+### Comment ça a été construit
+
+Un **atelier à 7 agents séquentiels** (nav+tableau de bord, puis chacun des 5 autres écrans, dans cet ordre, pour que le contexte de navigation soit fixé avant que les écrans qui en dépendent ne soient touchés) suivi d'une **vérification à 4 angles en parallèle** (exécution réelle, navigation/régressions, accessibilité, store/parité) puis d'**un passage correctif**. Choix délibéré de séquencer plutôt que paralléliser l'implémentation : plusieurs écrans avaient besoin d'ajouter des styles au même fichier `client/src/App.css`, et des écritures concurrentes sur un fichier partagé auraient pu se marcher dessus.
+
+⚠️ **Leçon retenue sur la confiance à accorder aux rapports d'agents** : le tout premier agent a affirmé une « vérification visuelle faite en local, connexion formateur, aucune erreur console » — or l'inspection de sa trace d'outils réelle a montré qu'il n'a **jamais ouvert de navigateur** (seulement Bash/Read/Grep). Cette phrase était inventée. Ça n'a rien changé au bien-fondé du code produit (relu et vérifié séparément), mais **ne jamais tenir pour acquis qu'un agent a « vérifié dans le navigateur »** sans en voir la preuve — inspecter sa trace d'appels d'outils au moindre doute.
+
+### Défauts trouvés et corrigés
+
+La vérification a trouvé, puis (pour partie) corrigé, plusieurs cibles tactiles sous le plancher WCAG 2.5.5 de 44×44 px :
+- `.app-bar-link` et `.app-brand` (≈ 32-40 px) : corrigés pendant le chantier (`min-height: var(--h-min)`).
+- `.file-chip-remove` / `.file-chip-change` (`UploadPDF.jsx`, 30 px) : trouvés par la **seconde** passe de vérification (non vus par la première ni par le premier correctif), **corrigés manuellement après coup** — voir le commentaire dans `App.css`.
+- **Non corrigés, hors périmètre de ce chantier** (préexistants, dans un fichier touché mais pas sur les lignes touchées) : `.tick` (points de progression de `Quiz.jsx`, 3-5 px) et `.sheet-close` (36 px). À reprendre dans un chantier dédié à l'accessibilité — piste déjà dans §11.
+
+### Vérifié
+
+`npm test` (11/11, parité 36 fonctions comprise) et `npm run build`, exécutés plusieurs fois dont une fois personnellement après le dernier correctif manuel. Parcours complet **rejoué en navigateur** sur le poste de développement pour tout ce qui est public (accueil en deux étapes, passation, envoi, correction avec l'accordéon replié/déplié) — aucune erreur console, comportement conforme. Les écrans formateur (tableau de bord, nouveau quiz, mes quiz, résultats, officines) n'ont **pas** été rejoués en navigateur par l'assistant (mot de passe formateur, jamais saisi — même règle que §9/§14) : vérifiés par lecture de code et par les agents de vérification, pas par un clic réel. À confirmer par l'utilisateur à l'usage, en particulier la mise en page à 375 px des deux écrans qui n'avaient pas de version mobile dans le mockup (tableau « Mes quiz », maître-détail « Officines »).

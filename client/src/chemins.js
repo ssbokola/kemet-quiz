@@ -13,8 +13,12 @@
  * l'espace de noms public.
  */
 export const chemins = {
-  creation: '/formateur',
+  // Index de l'espace formateur : le tableau de bord, plus depuis que la
+  // création a sa propre adresse (`nouveau`, ci-dessous).
+  tableauDeBord: '/formateur',
+  nouveau: '/formateur/nouveau',
   mesQuiz: '/formateur/quiz',
+  officines: '/formateur/officines',
   partage: (id) => `/formateur/quiz/${id}`,
   relecture: (id) => `/formateur/quiz/${id}/questions`,
   resultats: (id) => `/formateur/quiz/${id}/resultats`,

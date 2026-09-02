@@ -563,9 +563,33 @@ const stmt = {
   // Le décompte se fait en sous-requête plutôt qu'en jointure : une jointure
   // aurait écarté les quiz sans aucune réponse, qui sont précisément ceux que
   // le formateur cherche quand il se demande si son lien a été ouvert.
+  //
+  // avg_percent : même formule que listLearners (AVG des POURCENTAGES, pas
+  // SUM(score)/SUM(total)) — une évaluation de 5 questions pèse autant qu'une
+  // de 30. `r.total > 0` écarte une participation malformée d'une division
+  // par zéro plutôt que de faire échouer toute la ligne.
+  //
+  // top_pharmacy / pharmacy_count : le résumé « Meydeba +2 » de l'écran « Mes
+  // quiz » sans charger le détail des réponses pour chaque quiz de la liste,
+  // ce que le commentaire ci-dessus refuse déjà pour les questions. La plus
+  // fréquente d'abord, alphabétique à égalité (déterministe) ; NULL exclu,
+  // une participation sans officine ne doit ni gagner le tirage ni gonfler le
+  // compte.
   listQuizzes: db.prepare(`
     SELECT id, title, created_at, closed, single_attempt, expires_at,
-           (SELECT COUNT(*) FROM results WHERE results.quiz_id = quizzes.id) AS result_count
+           (SELECT COUNT(*) FROM results WHERE results.quiz_id = quizzes.id) AS result_count,
+           (SELECT AVG(r.score * 100.0 / r.total)
+              FROM results r
+             WHERE r.quiz_id = quizzes.id AND r.total > 0) AS avg_percent,
+           (SELECT r2.pharmacy_name
+              FROM results r2
+             WHERE r2.quiz_id = quizzes.id AND r2.pharmacy_name IS NOT NULL
+             GROUP BY r2.pharmacy_name
+             ORDER BY COUNT(*) DESC, r2.pharmacy_name ASC
+             LIMIT 1) AS top_pharmacy,
+           (SELECT COUNT(DISTINCT r3.pharmacy_name)
+              FROM results r3
+             WHERE r3.quiz_id = quizzes.id AND r3.pharmacy_name IS NOT NULL) AS pharmacy_count
     FROM quizzes
     ORDER BY created_at DESC
   `),
@@ -817,6 +841,19 @@ const stmt = {
        AND (@to   IS NULL OR r.submitted_at <  @to)
      ORDER BY r.submitted_at ASC, r.id ASC
   `),
+
+  // Les quatre chiffres du tableau de bord, en une seule requête à quatre
+  // sous-requêtes scalaires : pas de JOIN entre results/learners/pharmacies,
+  // qui multiplierait les lignes et fausserait les COUNT et l'AVG. Chaque
+  // sous-requête est indépendante, exactement le calcul demandé.
+  dashboardStats: db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM results) AS total_responses,
+      (SELECT AVG(score * 100.0 / total) FROM results WHERE total > 0) AS avg_percent,
+      (SELECT COUNT(*) FROM learners) AS total_learners,
+      (SELECT COUNT(DISTINCT pharmacy_id) FROM learners WHERE pharmacy_id IS NOT NULL)
+        AS active_pharmacies
+  `),
 };
 
 // Champs modifiables par PATCH /api/quiz/:id, chacun vers sa colonne.
@@ -881,6 +918,12 @@ function findResultByName(quizId, playerName) {
  * reçues. Volontairement SANS les questions ni le texte source : cette liste
  * alimente un écran de survol, pas une relecture, et charger 30 questions par
  * quiz pour afficher une ligne serait du gaspillage.
+ *
+ * avgPercent, topPharmacyName, pharmacyCount : ajoutés pour le tableau dense
+ * de « Mes quiz » (colonnes Officine et Score moyen). Même contrat que
+ * listLearners : avgPercent sort `null` — jamais 0 — quand aucune
+ * participation n'a de total exploitable ; topPharmacyName sort `null` et
+ * pharmacyCount vaut 0 quand personne n'a renseigné d'officine.
  */
 function listQuizzes() {
   return stmt.listQuizzes.all().map((row) => ({
@@ -891,6 +934,9 @@ function listQuizzes() {
     singleAttempt: Boolean(row.single_attempt),
     expiresAt: row.expires_at,
     resultCount: row.result_count,
+    avgPercent: row.avg_percent ?? null,
+    topPharmacyName: row.top_pharmacy ?? null,
+    pharmacyCount: row.pharmacy_count ?? 0,
   }));
 }
 
@@ -1461,6 +1507,23 @@ function listPharmacyHistory(pharmacyId, { from = null, to = null } = {}) {
     }));
 }
 
+/**
+ * Les quatre chiffres clés du tableau de bord, tous quiz et toute période
+ * confondus — cet écran n'a pas de filtre de date, à la différence de
+ * l'annuaire. `avgPercent` sort `null` (jamais 0 ni NaN) quand `results` est
+ * vide : AVG() sur zéro ligne rend déjà NULL en SQL, ce contrat traverse
+ * simplement la couche JS.
+ */
+function getDashboardStats() {
+  const row = stmt.dashboardStats.get();
+  return {
+    avgPercent: row.avg_percent ?? null,
+    totalResponses: row.total_responses ?? 0,
+    totalLearners: row.total_learners ?? 0,
+    activePharmacies: row.active_pharmacies ?? 0,
+  };
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -1507,4 +1570,8 @@ module.exports = {
   // 35e fonction. Même règle : ajoutée APRÈS tout ce qui précède, au même
   // rang dans db-memory.js, dans le même commit.
   listPharmacyHistory,
+  // 36e fonction, ajoutée APRÈS tout ce qui précède, au MÊME RANG dans
+  // db-memory.js, dans le même commit — voir le commentaire de tête sur la
+  // parité des deux stores.
+  getDashboardStats,
 };

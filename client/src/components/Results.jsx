@@ -19,8 +19,19 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
   const percentage = Math.round((score / total) * 100);
   const [displayScore, setDisplayScore] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
-  const wrongCount = correction.filter((c) => !c.isCorrect).length;
+  const [detailOuvert, setDetailOuvert] = useState(false);
   const headingRef = useRef(null);
+
+  // Les erreurs d'abord : on sépare une bonne fois les deux groupes (en
+  // gardant l'index d'origine pour le numéro « QUESTION n ») plutôt que de
+  // les retrouver à chaque rendu. Les ratées restent toujours visibles ; les
+  // bonnes réponses se replient derrière .r-toggle, ce qui évite de noyer les
+  // 1 à 3 erreurs typiques au milieu de 10 à 30 cartes vertes identiques.
+  const wrongItems = [];
+  const goodItems = [];
+  correction.forEach((item, idx) => (item.isCorrect ? goodItems : wrongItems).push({ item, idx }));
+  const wrongCount = wrongItems.length;
+  const goodCount = goodItems.length;
 
   // Convention de l'application : chaque écran reprend le focus sur son propre
   // titre principal à son montage. Le passage passation → résultats est un
@@ -289,42 +300,47 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
           {/* Niveau 2 sous le h1 du bandeau de score : la liste de correction,
               qui compte 10 à 30 cartes, devient atteignable d'un seul appui en
               navigation par titres. Aucun h3 en dessous — « QUESTION n » reste un
-              <span> dans .r-card-head : une seule section est ouverte par ce h2,
-              un niveau 3 n'y ajouterait aucune structure et créerait 10 à 30
-              titres bruyants. Le document va donc h1 → h2, sans saut ni orphelin.
+              <span> dans .r-card-head, tout comme .r-toggle plus bas : une seule
+              section est ouverte par ce h2, un niveau 3 n'y ajouterait aucune
+              structure et créerait 10 à 30 titres bruyants. Le document va donc
+              h1 → h2, sans saut ni orphelin, dans les DEUX cas (avec ou sans
+              erreur) puisque ce h2 est toujours rendu.
               Comme pour le h1, seule la BALISE change : .review-bar-title fixe
               font-size, font-weight et color, .review-bar est un conteneur flex
               (le h2 y est un item comme l'était le span) et le reset global annule
               la marge par défaut. Rendu strictement inchangé. */}
-          <h2 className="review-bar-title">Correction</h2>
+          <h2 className="review-bar-title">
+            {wrongCount > 0 ? 'Ce que vous avez manqué' : 'Détail des réponses'}
+          </h2>
           {wrongCount > 0 && (
             <span className="review-bar-count">
-              {wrongCount} à revoir
+              {wrongCount} erreur{wrongCount > 1 ? 's' : ''}
             </span>
           )}
         </div>
 
-        {correction.map((item, idx) => (
-          <div key={idx} className={`r-card ${item.isCorrect ? '' : 'is-wrong'}`}>
+        {/* Les erreurs d'abord, toujours dépliées : ce sont elles qui
+            intéressent l'apprenant juste après son score, et il y en a
+            rarement plus de 2 ou 3 sur un quiz de 10 questions. */}
+        {wrongItems.map(({ item, idx }) => (
+          <div key={idx} className="r-card is-wrong">
             <div className="r-card-head">
-              <span className={`r-badge ${item.isCorrect ? '' : 'is-wrong'}`}>
-                <Icon name={item.isCorrect ? 'check' : 'close'} size={11} width={2.6} />
+              <span className="r-badge is-wrong">
+                <Icon name="close" size={11} width={2.6} />
               </span>
               <span className="r-card-num">QUESTION {idx + 1}</span>
             </div>
             <p className="r-question">{item.question}</p>
-            {!item.isCorrect && (
-              <div className="r-answers">
-                <div className="r-answer r-answer--mine">
-                  <b>Vous</b>
-                  <span>{getOptionText(item.options, item.userAnswer)}</span>
-                </div>
-                <div className="r-answer r-answer--good">
-                  <b>Réponse</b>
-                  <span>{getOptionText(item.options, item.correctAnswer)}</span>
-                </div>
+            <div className="r-answers">
+              <div className="r-answer r-answer--mine">
+                <b>Vous</b>
+                <span>{getOptionText(item.options, item.userAnswer)}</span>
               </div>
-            )}
+              <div className="r-answer r-answer--good">
+                <b>Réponse</b>
+                <span>{getOptionText(item.options, item.correctAnswer)}</span>
+              </div>
+            </div>
             {item.explanation && (
               <div className="r-explain">
                 <Icon name="info" size={15} width={1.8} />
@@ -333,6 +349,61 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
             )}
           </div>
         ))}
+
+        {/* Les bonnes réponses se replient derrière ce déclencheur — même
+            convention que .apprenant-ligne--depliable (ApprenantHistorique) :
+            <button> toujours rendu avec aria-expanded, région ciblée par
+            aria-controls et toujours montée dans le DOM, seul `hidden`
+            bascule. .recent-row porte déjà le fond, la bordure et le
+            padding qu'il faut ; .r-badge (déjà utilisé dans chaque carte
+            ci-dessus) donne la pastille verte sans introduire de nouvelle
+            combinaison de couleur. */}
+        {goodCount > 0 && (
+          <>
+            <button
+              type="button"
+              className="recent-row"
+              aria-expanded={detailOuvert}
+              aria-controls="r-detail-bonnes"
+              onClick={() => setDetailOuvert((v) => !v)}
+            >
+              <span className="r-badge" aria-hidden="true">
+                <Icon name="check" size={11} width={2.6} />
+              </span>
+              <span className="recent-row-body">
+                <span className="recent-row-title">
+                  {goodCount} bonne{goodCount > 1 ? 's' : ''} réponse{goodCount > 1 ? 's' : ''}
+                </span>
+                <span className="recent-row-meta">
+                  {detailOuvert
+                    ? 'Masquer le détail question par question'
+                    : 'Afficher le détail question par question'}
+                </span>
+              </span>
+              <Icon name="chevronDown" size={16} width={1.7} className="r-toggle-chevron" />
+            </button>
+
+            <div id="r-detail-bonnes" hidden={!detailOuvert} className="r-detail-bonnes">
+              {goodItems.map(({ item, idx }) => (
+                <div key={idx} className="r-card">
+                  <div className="r-card-head">
+                    <span className="r-badge">
+                      <Icon name="check" size={11} width={2.6} />
+                    </span>
+                    <span className="r-card-num">QUESTION {idx + 1}</span>
+                  </div>
+                  <p className="r-question">{item.question}</p>
+                  {item.explanation && (
+                    <div className="r-explain">
+                      <Icon name="info" size={15} width={1.8} />
+                      <span>{item.explanation}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

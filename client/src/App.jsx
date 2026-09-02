@@ -1,18 +1,32 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import QuizPage from './pages/QuizPage';
+import Dashboard from './pages/Dashboard';
 import CreationQuiz from './pages/CreationQuiz';
 import MesQuiz from './pages/MesQuiz';
 import PartageQuiz from './pages/PartageQuiz';
 import RelectureQuiz from './pages/RelectureQuiz';
+import OfficinesEspace from './pages/OfficinesEspace';
 import QuizResults from './components/QuizResults';
 import Apprenants from './components/Apprenants';
 import AdminGate from './components/AdminGate';
 import AppBar from './components/AppBar';
-import Icon from './components/Icon';
 import { getAdminPassword } from './api';
 import { chemins } from './chemins';
 import './App.css';
+
+/**
+ * Les quatre onglets persistants de l'espace formateur, dans l'ordre voulu.
+ * `end` n'est posé QUE sur le tableau de bord : sans lui, NavLink le
+ * marquerait actif sur chaque sous-route formateur, qui commencent toutes
+ * par ce même préfixe « /formateur ».
+ */
+const ONGLETS_FORMATEUR = [
+  { to: chemins.tableauDeBord, label: 'Tableau de bord', end: true },
+  { to: chemins.nouveau, label: 'Nouveau quiz' },
+  { to: chemins.mesQuiz, label: 'Mes quiz' },
+  { to: chemins.officines, label: 'Officines' },
+];
 
 /**
  * Mise en page de l'espace formateur, et sa PORTE.
@@ -25,26 +39,19 @@ import './App.css';
  *
  * Gain de fond du passage aux routes : `unlocked` vit désormais dans une mise
  * en page qui ne se remonte pas quand on change d'écran.
+ *
+ * La barre à onglets REMPLACE l'ancien lien unique « Mes quiz » (autrefois
+ * seul accès secondaire de l'AppBar) : les quatre onglets couvrent désormais
+ * ce rôle, et un second accès dirait deux fois la même chose. Comme lui, elle
+ * n'apparaît qu'une fois déverrouillé — avant, elle exposerait la structure de
+ * l'espace formateur à qui n'a pas encore prouvé le mot de passe.
  */
 function EspaceFormateur() {
   const [unlocked, setUnlocked] = useState(!!getAdminPassword());
 
   return (
     <div className="app">
-      {/* AppBar acceptait déjà une prop `action` que personne ne passait :
-          c'était la prise prévue. Un SEUL lien, et seulement une fois
-          déverrouillé — à 375 px, la marque et « Mes quiz » tiennent, en
-          ajouter un second déborderait. */}
-      <AppBar
-        action={
-          unlocked ? (
-            <Link className="app-bar-link" to={chemins.mesQuiz}>
-              <Icon name="list" size={15} width={1.7} />
-              Mes quiz
-            </Link>
-          ) : null
-        }
-      />
+      <AppBar tabs={unlocked ? ONGLETS_FORMATEUR : null} />
       <main className="app-main app-main--wide">
         {unlocked ? <Outlet /> : <AdminGate onUnlock={() => setUnlocked(true)} />}
       </main>
@@ -58,11 +65,13 @@ function EspaceFormateur() {
  * distinct (c'est ce qui fait rejouer l'effet de focus), et le besoin qui a
  * ouvert ce chantier porte sur les quiz — on ne met pas en favori la fiche d'un
  * apprenant. Seul le retour change : il vise désormais une adresse STABLE, le
- * retour contextuel étant devenu le bouton Précédent du navigateur.
+ * retour contextuel étant devenu le bouton Précédent du navigateur. Cette
+ * adresse est le tableau de bord — l'ancien index de l'espace formateur, et
+ * toujours le point d'entrée naturel une fois qu'on quitte l'annuaire.
  */
 function EcranApprenants() {
   const navigate = useNavigate();
-  return <Apprenants onBack={() => navigate(chemins.creation)} />;
+  return <Apprenants onBack={() => navigate(chemins.tableauDeBord)} />;
 }
 
 function App() {
@@ -77,19 +86,24 @@ function App() {
         <Route path="/quiz/:id" element={<QuizPage />} />
 
         <Route path="/formateur" element={<EspaceFormateur />}>
-          <Route index element={<CreationQuiz />} />
+          {/* L'index est désormais le tableau de bord, pas la création : c'est
+              lui que voit le formateur en arrivant, et la création a migré sur
+              sa propre adresse (/formateur/nouveau) juste en dessous. */}
+          <Route index element={<Dashboard />} />
+          <Route path="nouveau" element={<CreationQuiz />} />
           <Route path="quiz" element={<MesQuiz />} />
           <Route path="quiz/:id" element={<PartageQuiz />} />
           <Route path="quiz/:id/questions" element={<RelectureQuiz />} />
           <Route path="quiz/:id/resultats" element={<QuizResults />} />
           <Route path="apprenants" element={<EcranApprenants />} />
-          <Route path="*" element={<Navigate to={chemins.creation} replace />} />
+          <Route path="officines" element={<OfficinesEspace />} />
+          <Route path="*" element={<Navigate to={chemins.tableauDeBord} replace />} />
         </Route>
 
         {/* `replace` et non une navigation ordinaire : sans lui, le bouton
             Précédent ramènerait sur « / », qui redirigerait de nouveau — le
             formateur resterait prisonnier de sa propre barre de navigation. */}
-        <Route path="*" element={<Navigate to={chemins.creation} replace />} />
+        <Route path="*" element={<Navigate to={chemins.tableauDeBord} replace />} />
       </Routes>
     </BrowserRouter>
   );

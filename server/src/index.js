@@ -687,6 +687,17 @@ app.get('/api/quizzes', requireAdmin, (req, res) => {
 });
 
 /**
+ * Les quatre chiffres clés du tableau de bord. Même verrou que les autres
+ * routes formateur — requireAdmin seul, pas requireAnnuaire : cet écran est
+ * accessible dès qu'un mot de passe formateur est configuré, exactement comme
+ * /api/quizzes, même quand l'annuaire lui-même reste scellé (voir
+ * requireAnnuaire plus bas).
+ */
+app.get('/api/dashboard', requireAdmin, (req, res) => {
+  res.json(store.getDashboardStats());
+});
+
+/**
  * Les questions d'un quiz, avec leur taux d'échec.
  *
  * ⚠️ Ne porte que sur les participations enregistrées DEPUIS la mise en place

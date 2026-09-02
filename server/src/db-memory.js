@@ -165,17 +165,48 @@ function findResultByName(quizId, playerName) {
 }
 
 // Même contrat que db.js : les plus récents d'abord, sans les questions.
+//
+// avgPercent, topPharmacyName, pharmacyCount : équivalent JS des trois
+// sous-requêtes ajoutées à stmt.listQuizzes dans db.js, pour le tableau dense
+// de « Mes quiz ». Le groupement par officine reprend l'esprit du ORDER BY
+// SQL — la plus fréquente d'abord, alphabétique à égalité — mais compare les
+// chaînes BRUTES (`<`/`>`), pas via localeCompare : listQuizzes n'est pas
+// couvert par le test de parité des deux stores (contrairement à
+// suggestLearners et listDuplicateCandidates), et cette égalité PARFAITE
+// entre les deux stores n'est donc pas un contrat à tenir — seul l'ordre
+// général (le plus récent d'abord) l'est.
 function listQuizzes() {
   return [...quizzes.values()]
-    .map((q) => ({
-      id: q.id,
-      title: q.title,
-      createdAt: q.createdAt,
-      closed: Boolean(q.closed),
-      singleAttempt: q.singleAttempt !== false,
-      expiresAt: q.expiresAt ?? null,
-      resultCount: (results.get(q.id) || []).length,
-    }))
+    .map((q) => {
+      const participations = results.get(q.id) || [];
+      const comptees = participations.filter((r) => r.total > 0);
+      const avgPercent =
+        comptees.length > 0
+          ? comptees.reduce((somme, r) => somme + (r.score * 100) / r.total, 0) / comptees.length
+          : null;
+
+      const parOfficine = new Map();
+      for (const r of participations) {
+        if (!r.pharmacyName) continue;
+        parOfficine.set(r.pharmacyName, (parOfficine.get(r.pharmacyName) || 0) + 1);
+      }
+      const officines = [...parOfficine.entries()].sort(
+        ([nomA, nA], [nomB, nB]) => nB - nA || (nomA < nomB ? -1 : nomA > nomB ? 1 : 0)
+      );
+
+      return {
+        id: q.id,
+        title: q.title,
+        createdAt: q.createdAt,
+        closed: Boolean(q.closed),
+        singleAttempt: q.singleAttempt !== false,
+        expiresAt: q.expiresAt ?? null,
+        resultCount: participations.length,
+        avgPercent,
+        topPharmacyName: officines.length > 0 ? officines[0][0] : null,
+        pharmacyCount: officines.length,
+      };
+    })
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
@@ -804,6 +835,36 @@ function listPharmacyHistory(pharmacyId, { from = null, to = null } = {}) {
   return rows;
 }
 
+/**
+ * Équivalent mémoire de la requête à quatre sous-requêtes de db.js. Même
+ * contrat : avgPercent sort null (jamais 0 ni NaN) quand aucune participation
+ * n'a de total > 0, exactement comme listLearners plus haut.
+ */
+function getDashboardStats() {
+  let totalResponses = 0;
+  let sum = 0;
+  let counted = 0;
+  for (const { entry } of allEntries()) {
+    totalResponses += 1;
+    if (entry.total > 0) {
+      sum += (entry.score * 100) / entry.total;
+      counted += 1;
+    }
+  }
+
+  const officinesActives = new Set();
+  for (const l of learners.values()) {
+    if (l.pharmacyId) officinesActives.add(l.pharmacyId);
+  }
+
+  return {
+    avgPercent: counted > 0 ? sum / counted : null,
+    totalResponses,
+    totalLearners: learners.size,
+    activePharmacies: officinesActives.size,
+  };
+}
+
 module.exports = {
   DB_PATH,
   isEphemeral,
@@ -844,4 +905,6 @@ module.exports = {
   setLearnerPharmacy,
   // 35e fonction, au MÊME RANG que dans db.js.
   listPharmacyHistory,
+  // 36e fonction, au MÊME RANG que dans db.js.
+  getDashboardStats,
 };

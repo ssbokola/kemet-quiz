@@ -417,7 +417,7 @@ function PartageQuiz() {
             <Icon name="arrowLeft" size={16} width={1.7} />
             Mes quiz
           </Link>
-          <Link className="btn btn--ghost" to={chemins.creation}>
+          <Link className="btn btn--ghost" to={chemins.nouveau}>
             Nouveau quiz
           </Link>
         </div>

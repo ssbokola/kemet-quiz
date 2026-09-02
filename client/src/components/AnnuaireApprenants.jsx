@@ -43,7 +43,7 @@ function texteEvaluations(n) {
  * d'une classe déjà auditée (.recent-row, .tag, .notice, .error-msg…), les
  * ratios de contraste restent donc ceux d'App.css.
  */
-function AnnuaireApprenants({ onOuvrirFiche, onDoublons, onOfficines, onRetour, messageEntrant = '' }) {
+function AnnuaireApprenants({ onOuvrirFiche, onDoublons, onRetour, messageEntrant = '' }) {
   const [liste, setListe] = useState(null);
   const [stockage, setStockage] = useState(null);
   const [chargement, setChargement] = useState(true);
@@ -194,30 +194,18 @@ function AnnuaireApprenants({ onOuvrirFiche, onDoublons, onOfficines, onRetour, 
         {/* Même motif que « Gérer l'annuaire » sur l'écran précédent : l'accès
             secondaire s'aligne sur la ligne de base du titre, discrètement.
             Icône `search` et non `refresh` — la flèche circulaire est réservée
-            à « régénérer / refaire ». */}
+            à « régénérer / refaire ». Un seul accès désormais : l'ancien lien
+            « Officines » a disparu avec ce lot, redondant avec l'onglet de
+            navigation persistant du même nom. */}
         <div className="field-row">
           <h1 ref={titreRef} tabIndex={-1}>
             Gérer l’annuaire
           </h1>
-          {/* .tag-row et non deux enfants directs du .field-row : à deux liens,
-              elle passe à la ligne sous 375 px plutôt que de déborder — le
-              .field-row lui-même n'a pas cette propriété (voir son usage sur
-              l'écran de création, à un seul enfant). */}
-          {(onDoublons || onOfficines) && (
-            <div className="tag-row">
-              {onDoublons && (
-                <button type="button" className="app-bar-link" onClick={onDoublons}>
-                  <Icon name="search" size={15} width={1.7} />
-                  Doublons probables
-                </button>
-              )}
-              {onOfficines && (
-                <button type="button" className="app-bar-link" onClick={onOfficines}>
-                  <Icon name="doc" size={15} width={1.7} />
-                  Officines
-                </button>
-              )}
-            </div>
+          {onDoublons && (
+            <button type="button" className="app-bar-link" onClick={onDoublons}>
+              <Icon name="search" size={15} width={1.7} />
+              Doublons probables
+            </button>
           )}
         </div>
         <p>

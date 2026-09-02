@@ -437,6 +437,15 @@ function Quiz({
             />
           ))}
         </div>
+        {/* Uniquement sur l'écran de question : le récapitulatif dit déjà la
+            même chose avec son propre h1/p (« Tout est répondu » / « Il reste
+            X questions »), redondant avec ce compte-ci. */}
+        {!onRecap && (
+          <p className="quiz-progress-note">
+            {answered} répondue{answered === 1 ? '' : 's'} · {total - answered} restante
+            {total - answered === 1 ? '' : 's'}
+          </p>
+        )}
       </div>
 
       {resumed && !onRecap && (

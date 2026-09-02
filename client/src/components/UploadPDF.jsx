@@ -537,211 +537,178 @@ function UploadPDF({ onQuizGenerated, lienMesQuiz, lienApprenants }) {
         <p>Déposez un document, l’IA en tire des questions à choix multiple.</p>
       </div>
 
-      {!file ? (
-        <label
-          className={`dropzone ${dragOver ? 'is-over' : ''}`}
-          htmlFor="pdf-input"
-          onDrop={handleDrop}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragEnter={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={(e) => {
-            e.preventDefault();
-            // Sans ce garde-fou, passer sur l'icône ou un <span> enfant fait
-            // remonter un dragleave et éteint l'état visuel en plein survol.
-            if (e.currentTarget.contains(e.relatedTarget)) return;
-            setDragOver(false);
-          }}
-        >
-          <Icon name="doc" size={34} stroke="var(--gold)" width={1.4} />
-          <span className="dropzone-title">Glissez un PDF ici</span>
-          <span className="dropzone-alt">
-            ou <b>parcourez vos fichiers</b>
-          </span>
-          <span className="dropzone-meta" id="pdf-input-hint">
-            PDF texte ou scanné · 20 Mo max
-          </span>
-          {/* L'input vit DANS le label : c'est ce qui permet :focus-within de
-              rendre le focus visible sur la zone, et Entrée/Espace d'ouvrir le
-              sélecteur depuis « ou parcourez vos fichiers ». Ne jamais le
-              ressortir du label. */}
-          <input
-            id="pdf-input"
-            ref={inputRef}
-            type="file"
-            accept=".pdf,application/pdf"
-            className="file-input"
-            aria-label="Glissez un PDF ici ou parcourez vos fichiers"
-            aria-describedby="pdf-input-hint"
-            onChange={handleInputChange}
-          />
-        </label>
-      ) : (
-        <div className="file-chip">
-          <Icon name="doc" size={20} stroke="var(--gold-deep)" width={1.5} />
-          <span className="file-chip-body">
-            <span className="file-chip-name">{file.name}</span>
-            <span className="file-chip-meta">
-              {pageCount ? `${pageCount} pages · ` : ''}
-              {formatSize(file.size)}
-            </span>
-          </span>
-          {/* Déclencheur VISIBLE du sélecteur quand un fichier est déjà retenu :
-              il porte l'input masqué, donc le focus clavier a toujours une
-              cible visible et on peut changer de PDF sans le retirer d'abord. */}
-          <label className="file-chip-change" htmlFor="pdf-input-change">
-            Changer
-            <input
-              id="pdf-input-change"
-              ref={inputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              className="file-input"
-              aria-label="Changer de fichier PDF"
-              onChange={handleInputChange}
-            />
-          </label>
-          <button
-            type="button"
-            className="file-chip-remove"
-            onClick={clearFile}
-            aria-label="Retirer le fichier"
-          >
-            <Icon name="close" size={13} width={2} />
-          </button>
-        </div>
-      )}
-
-      {/* Région live montée en permanence (donc active avant l'arrivée du
-          message) : confirme la sélection du fichier aux lecteurs d'écran.
-          Périmètre : la CONFIRMATION DE SÉLECTION uniquement — les erreurs et
-          la progression sont annoncées par leurs propres régions. */}
-      <p className="sr-live" role="status">
-        {file ? `Fichier retenu : ${file.name}, ${formatSize(file.size)}.` : ''}
-      </p>
-
-      {file && (
-        <>
-          {/* Palier 1 — LA DÉCISION. Seule carte blanche de l'écran : le nombre
-              de questions et le niveau sont les deux seuls réglages qui pilotent
-              ce que le modèle écrit, donc les deux seuls dont l'erreur impose
-              une régénération. Tentatives et validité se rattrapent après coup
-              depuis l'espace formateur : ils descendent dans le tiroir. */}
-          <div className="card field-lead">
-            <div className="field">
-              <span className="field-label field-label--lead" id="qcount-label">
-                Nombre de questions
-              </span>
-              <RadioGroup
-                className="segments"
-                labelledBy="qcount-label"
-                describedBy="qcount-est"
-                options={QUESTION_OPTIONS}
-                value={numQuestions}
-                onChange={setNumQuestions}
-                optionClassName={(opt, checked) => `segment ${checked ? 'is-active' : ''}`}
-              />
-              {/* Aucune région live ici : les flèches du radiogroup appellent
-                  onChange à CHAQUE appui, une région polie empilerait autant
-                  d'annonces (« Environ 5 min de passation », « Environ 8 min de
-                  passation »…) par-dessus l'annonce de focus de chaque option.
-                  L'estimation est exposée par le aria-describedby que RadioGroup
-                  pose sur l'option focalisable, lue à l'entrée du focus dans le
-                  groupe. */}
-              <span className="field-readout" id="qcount-est">
-                Environ {estMinutes} min de passation
-              </span>
-            </div>
-
-            <div className="field">
-              <span className="field-label field-label--lead" id="level-label">
-                Niveau
-              </span>
-              <RadioGroup
-                className="choices"
-                labelledBy="level-label"
-                options={DIFFICULTY_OPTIONS}
-                value={difficulty}
-                onChange={setDifficulty}
-                optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
-                renderOption={(opt) => (
-                  <>
-                    <span className="choice-dot" />
-                    <span className="choice-label">{opt.label}</span>
-                    <span className="choice-desc">{opt.desc}</span>
-                  </>
-                )}
-              />
-            </div>
-          </div>
-
-          {/* Palier 2 — L'IDENTITÉ. Pré-rempli depuis le nom du PDF affiché
-              juste au-dessus dans la puce : c'est une correction, pas une
-              décision, donc il passe après la carte. */}
-          <div className="field">
-            <label className="field-label" htmlFor="quiz-title">
-              Titre du quiz
-            </label>
-            <input
-              id="quiz-title"
-              type="text"
-              className="input"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex. Procédure caisse"
-            />
-          </div>
-
-          {/* Palier 3 — LE TIROIR. Le panneau est TOUJOURS rendu, seul `hidden`
-              bascule : `aria-controls` doit désigner un élément existant dans
-              les deux états, et les deux radiogroups qu'il contient ne doivent
-              jamais être démontés. Ne pas remplacer par un rendu conditionnel. */}
-          <div className="advanced">
-            {/* type="button" IMPÉRATIF : dans un <form>, un <button> sans type
-                soumet le formulaire au clic. */}
-            <button
-              type="button"
-              className={`disclosure ${diffusionPersonnalisee ? 'is-custom' : ''}`}
-              aria-expanded={diffusionOuverte}
-              aria-controls="adv-panel"
-              onClick={() => setDiffusionOuverte((o) => !o)}
+      {/* Document à gauche, réglages puis bouton à droite (mockup « 02 · Nouveau
+          quiz » du lot « Direction retenue »). Rendue SANS CONDITION sur
+          `file` : c'est ce qui garde .sticky-actions — et son role="alert" —
+          monté en permanence, y compris avant tout dépôt, quand ce bouton sert
+          justement à signaler qu'aucun PDF n'a encore été choisi (voir le
+          refus dans handleSubmit ci-dessus). Sans fichier, .is-empty bloque la
+          mise en colonnes (App.css) : la grille n'a qu'une colonne implicite
+          et les deux blocs s'empilent dans l'ordre du JSX — la zone de dépôt,
+          puis le bouton — pixel pour pixel la mise en page d'avant ce lot. */}
+      <div className={`creation-layout${file ? '' : ' is-empty'}`}>
+        <div className="stack">
+          {!file ? (
+            <label
+              className={`dropzone ${dragOver ? 'is-over' : ''}`}
+              htmlFor="pdf-input"
+              onDrop={handleDrop}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                // Sans ce garde-fou, passer sur l'icône ou un <span> enfant fait
+                // remonter un dragleave et éteint l'état visuel en plein survol.
+                if (e.currentTarget.contains(e.relatedTarget)) return;
+                setDragOver(false);
+              }}
             >
-              <span className="disclosure-label">Diffusion du lien</span>
-              {/* Le résumé vit DANS le bouton : replier n'efface donc aucune
-                  information, ni à l'œil ni dans le nom accessible. Jamais de
-                  aria-live ici — c'est du texte inerte, et le changement est
-                  déjà annoncé par le radio qui le provoque. */}
-              <span className="disclosure-values">
-                {resumeDiffusion.map((r, i) => (
-                  <Fragment key={r}>
-                    {i > 0 && (
-                      <span className="disclosure-sep" aria-hidden="true">
-                        ·
-                      </span>
-                    )}
-                    {r}
-                  </Fragment>
-                ))}
+              <Icon name="doc" size={34} stroke="var(--gold)" width={1.4} />
+              <span className="dropzone-title">Glissez un PDF ici</span>
+              <span className="dropzone-alt">
+                ou <b>parcourez vos fichiers</b>
               </span>
-              <Icon name="chevronDown" size={16} className="disclosure-chevron" />
-            </button>
+              <span className="dropzone-meta" id="pdf-input-hint">
+                PDF texte ou scanné · 20 Mo max
+              </span>
+              {/* L'input vit DANS le label : c'est ce qui permet :focus-within de
+                  rendre le focus visible sur la zone, et Entrée/Espace d'ouvrir le
+                  sélecteur depuis « ou parcourez vos fichiers ». Ne jamais le
+                  ressortir du label. */}
+              <input
+                id="pdf-input"
+                ref={inputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="file-input"
+                aria-label="Glissez un PDF ici ou parcourez vos fichiers"
+                aria-describedby="pdf-input-hint"
+                onChange={handleInputChange}
+              />
+            </label>
+          ) : (
+            <>
+              <div className="file-chip">
+                <Icon name="doc" size={20} stroke="var(--gold-deep)" width={1.5} />
+                <span className="file-chip-body">
+                  <span className="file-chip-name">{file.name}</span>
+                  <span className="file-chip-meta">
+                    {pageCount ? `${pageCount} pages · ` : ''}
+                    {formatSize(file.size)}
+                  </span>
+                </span>
+                {/* Déclencheur VISIBLE du sélecteur quand un fichier est déjà retenu :
+                    il porte l'input masqué, donc le focus clavier a toujours une
+                    cible visible et on peut changer de PDF sans le retirer d'abord. */}
+                <label className="file-chip-change" htmlFor="pdf-input-change">
+                  Changer
+                  <input
+                    id="pdf-input-change"
+                    ref={inputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    className="file-input"
+                    aria-label="Changer de fichier PDF"
+                    onChange={handleInputChange}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="file-chip-remove"
+                  onClick={clearFile}
+                  aria-label="Retirer le fichier"
+                >
+                  <Icon name="close" size={13} width={2} />
+                </button>
+              </div>
 
-            <div id="adv-panel" className="adv-panel" hidden={!diffusionOuverte}>
+              {/* Bloc purement DÉCORATIF (détail du contrat dans App.css,
+                  .doc-preview) : l'extraction réelle n'a lieu qu'à l'envoi, il
+                  n'y a donc encore aucun contenu réel à montrer ici. */}
+              <div className="card doc-preview">
+                <div className="doc-preview-head">
+                  <span className="eyebrow">Aperçu du document</span>
+                  {pageCount ? (
+                    <span className="dropzone-meta">page 1 / {pageCount}</span>
+                  ) : null}
+                </div>
+                <div className="doc-preview-body" aria-hidden="true">
+                  <span className="doc-preview-line" style={{ width: '58%' }} />
+                  <span className="doc-preview-line" style={{ width: '100%' }} />
+                  <span className="doc-preview-line" style={{ width: '96%' }} />
+                  <span className="doc-preview-line" style={{ width: '88%' }} />
+                  <span className="doc-preview-line" style={{ width: '100%' }} />
+                  <span className="doc-preview-line" style={{ width: '44%' }} />
+                  <span
+                    className="doc-preview-line doc-preview-line--head"
+                    style={{ width: '40%' }}
+                  />
+                  <span className="doc-preview-line" style={{ width: '92%' }} />
+                  <span className="doc-preview-line" style={{ width: '100%' }} />
+                  <span className="doc-preview-line" style={{ width: '70%' }} />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Région live montée en permanence (donc active avant l'arrivée du
+              message) : confirme la sélection du fichier aux lecteurs d'écran.
+              Périmètre : la CONFIRMATION DE SÉLECTION uniquement — les erreurs et
+              la progression sont annoncées par leurs propres régions. */}
+          <p className="sr-live" role="status">
+            {file ? `Fichier retenu : ${file.name}, ${formatSize(file.size)}.` : ''}
+          </p>
+        </div>
+
+        <div className="stack">
+          {file && (
+            // Carte UNIQUE des réglages : nombre de questions et niveau
+            // pilotent ce que le modèle écrit, donc les deux seuls dont
+            // l'erreur impose une régénération ; titre et diffusion se
+            // rattrapent après coup et vivent désormais dans la même carte
+            // (voir le commentaire de .field-lead, App.css).
+            <div className="card field-lead">
               <div className="field">
-                <span className="field-label" id="attempts-label">
-                  Tentatives par apprenant
+                <span className="field-label field-label--lead" id="qcount-label">
+                  Nombre de questions
+                </span>
+                <RadioGroup
+                  className="segments"
+                  labelledBy="qcount-label"
+                  describedBy="qcount-est"
+                  options={QUESTION_OPTIONS}
+                  value={numQuestions}
+                  onChange={setNumQuestions}
+                  optionClassName={(opt, checked) => `segment ${checked ? 'is-active' : ''}`}
+                />
+                {/* Aucune région live ici : les flèches du radiogroup appellent
+                    onChange à CHAQUE appui, une région polie empilerait autant
+                    d'annonces (« Environ 5 min de passation », « Environ 8 min de
+                    passation »…) par-dessus l'annonce de focus de chaque option.
+                    L'estimation est exposée par le aria-describedby que RadioGroup
+                    pose sur l'option focalisable, lue à l'entrée du focus dans le
+                    groupe. */}
+                <span className="field-readout" id="qcount-est">
+                  Environ {estMinutes} min de passation
+                </span>
+              </div>
+
+              <div className="field">
+                <span className="field-label field-label--lead" id="level-label">
+                  Niveau
                 </span>
                 <RadioGroup
                   className="choices"
-                  labelledBy="attempts-label"
-                  options={ATTEMPT_OPTIONS}
-                  value={singleAttempt}
-                  onChange={setSingleAttempt}
+                  labelledBy="level-label"
+                  options={DIFFICULTY_OPTIONS}
+                  value={difficulty}
+                  onChange={setDifficulty}
                   optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
                   renderOption={(opt) => (
                     <>
@@ -753,76 +720,155 @@ function UploadPDF({ onQuizGenerated, lienMesQuiz, lienApprenants }) {
                 />
               </div>
 
+              {/* Pré-rempli depuis le nom du PDF affiché dans la puce, à
+                  gauche : c'est une correction, pas une décision. */}
               <div className="field">
-                <span className="field-label" id="expiry-label">
-                  Durée de validité du lien
-                </span>
-                <RadioGroup
-                  className="segments segments--3"
-                  labelledBy="expiry-label"
-                  describedBy="expiry-help"
-                  options={EXPIRY_OPTIONS}
-                  value={expiresInHours}
-                  onChange={setExpiresInHours}
-                  optionClassName={(opt, checked) =>
-                    `segment segment--text ${checked ? 'is-active' : ''}`
-                  }
+                <label className="field-label" htmlFor="quiz-title">
+                  Titre du quiz
+                </label>
+                <input
+                  id="quiz-title"
+                  type="text"
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Ex. Procédure caisse"
                 />
-                {/* Enfant IMMÉDIAT du champ qu'il décrit : la position visuelle
-                    et le lien aria-describedby désignent enfin le même contrôle. */}
-                <span className="dropzone-meta" id="expiry-help">
-                  Passé ce délai le lien ne fonctionne plus. Vous pourrez aussi fermer le quiz à
-                  la main.
-                </span>
+              </div>
+
+              {/* Le panneau est TOUJOURS rendu, seul `hidden` bascule :
+                  `aria-controls` doit désigner un élément existant dans les
+                  deux états, et les deux radiogroups qu'il contient ne doivent
+                  jamais être démontés. Ne pas remplacer par un rendu
+                  conditionnel. */}
+              <div className="advanced">
+                {/* type="button" IMPÉRATIF : dans un <form>, un <button> sans type
+                    soumet le formulaire au clic. */}
+                <button
+                  type="button"
+                  className={`disclosure ${diffusionPersonnalisee ? 'is-custom' : ''}`}
+                  aria-expanded={diffusionOuverte}
+                  aria-controls="adv-panel"
+                  onClick={() => setDiffusionOuverte((o) => !o)}
+                >
+                  <span className="disclosure-label">Diffusion du lien</span>
+                  {/* Le résumé vit DANS le bouton : replier n'efface donc aucune
+                      information, ni à l'œil ni dans le nom accessible. Jamais de
+                      aria-live ici — c'est du texte inerte, et le changement est
+                      déjà annoncé par le radio qui le provoque. */}
+                  <span className="disclosure-values">
+                    {resumeDiffusion.map((r, i) => (
+                      <Fragment key={r}>
+                        {i > 0 && (
+                          <span className="disclosure-sep" aria-hidden="true">
+                            ·
+                          </span>
+                        )}
+                        {r}
+                      </Fragment>
+                    ))}
+                  </span>
+                  <Icon name="chevronDown" size={16} className="disclosure-chevron" />
+                </button>
+
+                <div id="adv-panel" className="adv-panel" hidden={!diffusionOuverte}>
+                  <div className="field">
+                    <span className="field-label" id="attempts-label">
+                      Tentatives par apprenant
+                    </span>
+                    <RadioGroup
+                      className="choices"
+                      labelledBy="attempts-label"
+                      options={ATTEMPT_OPTIONS}
+                      value={singleAttempt}
+                      onChange={setSingleAttempt}
+                      optionClassName={(opt, checked) => `choice ${checked ? 'is-active' : ''}`}
+                      renderOption={(opt) => (
+                        <>
+                          <span className="choice-dot" />
+                          <span className="choice-label">{opt.label}</span>
+                          <span className="choice-desc">{opt.desc}</span>
+                        </>
+                      )}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <span className="field-label" id="expiry-label">
+                      Durée de validité du lien
+                    </span>
+                    <RadioGroup
+                      className="segments segments--3"
+                      labelledBy="expiry-label"
+                      describedBy="expiry-help"
+                      options={EXPIRY_OPTIONS}
+                      value={expiresInHours}
+                      onChange={setExpiresInHours}
+                      optionClassName={(opt, checked) =>
+                        `segment segment--text ${checked ? 'is-active' : ''}`
+                      }
+                    />
+                    {/* Enfant IMMÉDIAT du champ qu'il décrit : la position visuelle
+                        et le lien aria-describedby désignent enfin le même contrôle. */}
+                    <span className="dropzone-meta" id="expiry-help">
+                      Passé ce délai le lien ne fonctionne plus. Vous pourrez aussi fermer le quiz à
+                      la main.
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
+          )}
+
+          {/* Rendue INCONDITIONNELLEMENT : c'est elle qui porte le conteneur
+              role="alert" ci-dessous, dont tout le fonctionnement repose sur
+              un montage permanent — y compris avant tout dépôt de fichier,
+              quand handleSubmit s'en sert pour signaler l'absence de PDF.
+              Elle vit dans cette colonne, mais SANS dépendre de `file` : seule
+              la carte de réglages juste au-dessus l'est. C'est le
+              « raffinement » à ne jamais ajouter : conditionner CETTE barre
+              démonterait le role="alert" au moment précis où il doit parler. */}
+          <div className="sticky-actions sticky-actions--stacked">
+            {/* Conteneur monté en permanence : c'est lui qui porte role="alert",
+                pas le message. Une alerte qui apparaît en même temps que son texte
+                n'est pas annoncée de façon fiable ; ici la région préexiste et seul
+                son contenu change — d'où `announcedError`, retardé d'un commit, qui
+                garantit cette séquence même au remontage du formulaire. Le message
+                n'est PAS focalisable : il est annoncé par la région et par elle
+                seule, la reprise de focus vise le bouton d'envoi juste en dessous.
+                Garder la forme ternaire : `{announcedError.texte && …}` avec une
+                chaîne vide peut laisser un nœud texte vide et casser :empty.
+                La `key` porte le numéro d'occurrence : à refus identique répété, elle
+                change, React remplace le <p> au lieu de le laisser tel quel, et la
+                région — elle, toujours montée — voit bien son contenu muter. Sans
+                elle, le second refus identique n'est annoncé nulle part. */}
+            <div className="error-slot" role="alert" aria-atomic="true">
+              {announcedError.texte ? (
+                <p className="error-msg" key={announcedError.n}>
+                  <Icon name="info" size={16} width={1.8} />
+                  <span>{announcedError.texte}</span>
+                </p>
+              ) : null}
+            </div>
+
+            {/* Bouton volontairement TOUJOURS actif : un bouton désactivé n'est pas
+                atteignable au clavier, donc sa raison d'être indisponible n'est
+                lisible nulle part. La contrainte est vérifiée au clic et rendue
+                dans la région d'alerte ci-dessus. */}
+            <button
+              ref={submitRef}
+              type="submit"
+              className="btn btn--primary btn--block"
+              aria-describedby="submit-hint"
+            >
+              Générer {numQuestions} questions
+              <Icon name="arrowRight" size={18} width={1.8} />
+            </button>
+            <span className="btn-hint" id="submit-hint">
+              Vous pourrez relire et corriger avant de partager.
+            </span>
           </div>
-        </>
-      )}
-
-      {/* La barre est rendue INCONDITIONNELLEMENT, hors du `{file && …}` : la
-          conditionner démonterait le conteneur role="alert" ci-dessous, dont
-          tout le fonctionnement repose sur un montage permanent. C'est le
-          « raffinement » à ne jamais ajouter. */}
-      <div className="sticky-actions sticky-actions--stacked">
-        {/* Conteneur monté en permanence : c'est lui qui porte role="alert",
-            pas le message. Une alerte qui apparaît en même temps que son texte
-            n'est pas annoncée de façon fiable ; ici la région préexiste et seul
-            son contenu change — d'où `announcedError`, retardé d'un commit, qui
-            garantit cette séquence même au remontage du formulaire. Le message
-            n'est PAS focalisable : il est annoncé par la région et par elle
-            seule, la reprise de focus vise le bouton d'envoi juste en dessous.
-            Garder la forme ternaire : `{announcedError.texte && …}` avec une
-            chaîne vide peut laisser un nœud texte vide et casser :empty.
-            La `key` porte le numéro d'occurrence : à refus identique répété, elle
-            change, React remplace le <p> au lieu de le laisser tel quel, et la
-            région — elle, toujours montée — voit bien son contenu muter. Sans
-            elle, le second refus identique n'est annoncé nulle part. */}
-        <div className="error-slot" role="alert" aria-atomic="true">
-          {announcedError.texte ? (
-            <p className="error-msg" key={announcedError.n}>
-              <Icon name="info" size={16} width={1.8} />
-              <span>{announcedError.texte}</span>
-            </p>
-          ) : null}
         </div>
-
-        {/* Bouton volontairement TOUJOURS actif : un bouton désactivé n'est pas
-            atteignable au clavier, donc sa raison d'être indisponible n'est
-            lisible nulle part. La contrainte est vérifiée au clic et rendue
-            dans la région d'alerte ci-dessus. */}
-        <button
-          ref={submitRef}
-          type="submit"
-          className="btn btn--primary btn--block"
-          aria-describedby="submit-hint"
-        >
-          Générer {numQuestions} questions
-          <Icon name="arrowRight" size={18} width={1.8} />
-        </button>
-        <span className="btn-hint" id="submit-hint">
-          Vous pourrez relire et corriger avant de partager.
-        </span>
       </div>
     </form>
   );

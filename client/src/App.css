@@ -10,20 +10,76 @@
   flex-direction: column;
 }
 
+/* La bordure basse et le fond vivent sur la COQUILLE, pas sur .app-bar : sur
+   l'espace formateur une seconde rangée (.app-tabs) s'intercale entre la
+   marque et cette bordure, et elle doit hériter le même fond papier plutôt
+   que d'en redéclarer un. Sur QuizPage, sans .app-tabs, le rendu ne bouge pas
+   d'un pixel — la coquille ne contient alors que .app-bar. */
+.app-bar-shell {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
 .app-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s-5);
   padding: var(--s-7) var(--s-9);
-  background: var(--paper);
-  border-bottom: 1px solid var(--line);
 }
 
+/* ---------- Onglets persistants de l'espace formateur ---------- */
+/* Rangée sous la marque, propre à App.jsx (prop `tabs` d'AppBar) : Tableau de
+   bord, Nouveau quiz, Mes quiz, Officines. `overflow-x: auto` plutôt qu'un
+   onglet qui disparaîtrait sous 720 px — les quatre restent ATTEIGNABLES sur
+   mobile, un simple défilement horizontal de la barre elle-même. */
+.app-tabs {
+  display: flex;
+  gap: var(--s-2);
+  padding: 0 var(--s-9);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --text-3 sur --paper : 4,87:1 (WCAG 1.4.3, 14px). L'état actif ne repose
+   jamais sur la seule couleur (WCAG 1.4.1) : --text (16,67:1) ET le filet
+   doré ET aria-current="page", posé par NavLink lui-même, portent l'état
+   ensemble. min-height: var(--h-min) — plancher WCAG 2.5.5, cible tactile
+   d'au moins 44 px même si le mockup source en montrait certaines à 40px. */
+.app-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: var(--h-min);
+  padding: 0 var(--s-6);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--text-3);
+  text-decoration: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* le filet actif se pose exactement sur la bordure de la coquille */
+}
+
+.app-tab:hover {
+  color: var(--gold-deep);
+}
+
+.app-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--gold);
+}
+
+/* min-height: var(--h-min) — plancher WCAG 2.5.5 : le logo (40px, .app-mark-img)
+   restait sous 44px de cible tactile faute d'un plancher sur le lien
+   englobant. Centré par align-items, le logo garde sa taille visuelle
+   inchangée, seule la zone cliquable grandit. */
 .app-brand {
   display: flex;
   align-items: center;
   gap: var(--s-4);
+  min-height: var(--h-min);
   border: 0;
 }
 
@@ -57,10 +113,14 @@
   color: var(--text);
 }
 
+/* min-height: var(--h-min) — plancher WCAG 2.5.5, cible tactile d'au moins
+   44 px (comme .app-tab ci-dessus) : sans lui la seule ligne de texte/icône
+   plafonnait vers 32-34 px malgré le padding. */
 .app-bar-link {
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
+  min-height: var(--h-min);
   font-size: var(--t-label);
   font-weight: 600;
   color: var(--text-3);
@@ -98,6 +158,9 @@
 @media (min-width: 720px) {
   .app-bar {
     padding: var(--s-8) var(--s-13);
+  }
+  .app-tabs {
+    padding: 0 var(--s-13);
   }
   .app-main {
     padding: var(--s-14) var(--s-11) var(--s-16);
@@ -277,14 +340,19 @@
   gap: var(--s-5);
 }
 
-/* Palier 1 — LA DÉCISION. Le nombre de questions et le niveau sont les deux
-   seuls réglages qui pilotent ce que le modèle écrit : s'y tromper impose une
-   régénération payante, alors que tentatives et validité se rattrapent après
-   coup. .card, définie plus haut et jusqu'ici sans aucun usage en JSX, est
-   RÉVEILLÉE pour les porter plutôt que redéclarée sous un nom neuf : c'est sa
-   rareté qui fait le rang du palier. Seule surface blanche de l'écran, elle dit
-   « ça se décide ici » sans un mot. Ne JAMAIS habiller un second bloc de .card
-   sur cet écran, la hiérarchie s'annulerait. */
+/* LA CARTE DES RÉGLAGES. Le nombre de questions et le niveau pilotent ce que
+   le modèle écrit — s'y tromper impose une régénération payante — puis le
+   titre et la diffusion, qui se rattrapent après coup : les quatre vivent
+   dans la MÊME carte depuis la mise en page à deux colonnes du lot
+   « Direction retenue » (mockup 02 · Nouveau quiz). .card, définie plus haut,
+   les porte tous.
+   Avant ce lot, cette carte était la SEULE surface blanche de l'écran et le
+   disait sans un mot ; la colonne du document (.doc-preview, ci-dessous) en
+   est désormais une seconde. Ce n'était pas une coquetterie graphique : sur
+   UNE SEULE colonne, deux cartes se lisent comme deux paliers rivaux. Sur
+   DEUX colonnes, il n'y a plus d'ambiguïté à lever — la position, document à
+   gauche et décision à droite, porte seule la hiérarchie que l'unicité de
+   .card portait jusqu'ici. */
 .field-lead {
   display: flex;
   flex-direction: column;
@@ -590,8 +658,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  /* min-height/width: var(--h-min) — plancher WCAG 2.5.5, cible tactile
+     minimale. Trouvé sous 44px (30px) lors de la réorganisation de cet écran
+     (mockup « Direction retenue », 02 · Nouveau quiz) : corrigé ici plutôt
+     que reproduit. */
+  min-width: var(--h-min);
+  min-height: var(--h-min);
   border: 0;
   border-radius: var(--r-sm);
   background: rgba(154, 122, 46, 0.12);
@@ -611,7 +683,9 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  height: 30px;
+  /* min-height: var(--h-min) — même correctif que .file-chip-remove juste
+     au-dessus, même origine. */
+  min-height: var(--h-min);
   padding: 0 var(--s-5);
   border: 1px solid var(--gold-deep);
   border-radius: var(--r-sm);
@@ -864,6 +938,87 @@
    permanence. Le bug ne se voit PAS dans une revue de JSX. */
 .adv-panel[hidden] {
   display: none;
+}
+
+/* ---------- Écran de création : deux colonnes (mockup « 02 · Nouveau quiz ») ---------- */
+/* Document à gauche, réglages puis bouton à droite. Rendue SANS CONDITION sur
+   la présence d'un fichier : c'est ce qui garde .sticky-actions — et son
+   role="alert" — monté en permanence dans les DEUX états, y compris avant
+   tout dépôt, quand ce bouton sert justement à signaler qu'aucun PDF n'a
+   encore été choisi (voir le refus dans UploadPDF.jsx, handleSubmit). Seule
+   la carte de réglages, à l'intérieur, dépend du fichier.
+   Sans fichier, .is-empty bloque la mise en colonnes : la grille n'a alors
+   qu'une colonne implicite (valeur par défaut d'un display: grid sans
+   grid-template-columns) et les deux blocs s'empilent dans l'ordre du JSX —
+   la zone de dépôt, puis le bouton — pixel pour pixel la mise en page d'avant
+   ce lot. Le gap reprend --s-10 : c'était déjà, via .stack, l'écart entre ces
+   deux blocs avant l'introduction de cette grille. */
+.creation-layout {
+  display: grid;
+  gap: var(--s-10);
+  align-items: start;
+}
+
+@media (min-width: 720px) {
+  .creation-layout:not(.is-empty) {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Le tiroir « Diffusion » vit désormais DANS .field-lead (carte des
+   réglages) : il n'a plus de gouttière de PAGE à déborder, sa propre carte le
+   borde déjà. On annule donc le débord de .disclosure (l.824-826 plus haut,
+   calibré sur --s-6, la gouttière de page) : la surbrillance au survol reste
+   DANS le padding de la carte plutôt que de chevaucher sa bordure. */
+.field-lead .disclosure {
+  width: 100%;
+  margin-inline: 0;
+}
+
+/* Carte du document (aperçu). Tout .doc-preview-body est DÉCORATIF :
+   l'extraction réelle du texte n'a lieu qu'à l'envoi (extractTextFromPdf,
+   appelée dans handleSubmit) — rien n'est donc encore lisible du PDF à ce
+   stade, ces lignes ne recréent aucun contenu réel, elles disent seulement
+   « un document est prêt ». D'où aria-hidden côté JSX sur ce bloc : seuls
+   l'intitulé « Aperçu du document » (.eyebrow, déjà audité) et le numéro de
+   page (.dropzone-meta, déjà audité) restent annoncés. */
+.doc-preview {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* clippe les deux zones internes au rayon de .card */
+}
+
+.doc-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-5) var(--s-7);
+  border-bottom: 1px solid var(--line);
+}
+
+/* --paper en fond interne : même inset que .step.is-todo (l.1088), déjà
+   audité comme fond neutre sur --surface. Aucun texte n'y repose (le bloc
+   entier est aria-hidden) : aucune exigence WCAG 1.4.3 ne s'y applique. */
+.doc-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-8);
+  background: var(--paper);
+  min-height: 220px;
+}
+
+.doc-preview-line {
+  height: 8px;
+  border-radius: 3px;
+  background: var(--paper-2);
+  flex-shrink: 0;
+}
+
+.doc-preview-line--head {
+  height: 12px;
+  margin-top: var(--s-3);
 }
 
 /* Quiz récents */
@@ -1819,6 +1974,13 @@ a.recent-row {
   flex: 1;
 }
 
+/* Même correctif, pour le déclencheur « N bonnes réponses » de Results.jsx :
+   .r-badge y tient la place de .app-mark comme première pastille de la
+   ligne, avec les trois mêmes enfants (pastille, corps, chevron). */
+.recent-row .r-badge + .recent-row-body {
+  flex: 1;
+}
+
 /* .card n'a JAMAIS porté de padding : son unique usage jusqu'ici était
    .card.field-lead, où c'est .field-lead qui le donne (l.288-299). Les quatre
    blocs de la fiche d'apprenant sont des .card.stack--tight sans .field-lead :
@@ -2141,6 +2303,16 @@ a.recent-row {
 .tick.is-current {
   height: 5px;
   background: var(--on-ink);
+}
+
+/* Nombre de réponses déjà données, sous la barre segmentée : une information
+   que la seule couleur des ticks ne rend pas lisible d'un coup d'œil quand on
+   a navigué dans le désordre (pastilles de progression, feuille récapitulative).
+   Même couple taille/couleur que .kbd-hint, déjà audité sur ce même fond
+   (--ink-deep) : 6,12:1. */
+.quiz-progress-note {
+  font-size: var(--t-micro);
+  color: var(--on-ink-2);
 }
 
 .quiz-body {
@@ -2936,6 +3108,34 @@ a.recent-row {
   color: var(--gold-deep);
 }
 
+/* Chevron du déclencheur « N bonnes réponses » — même rotation piloté par
+   aria-expanded que .disclosure-chevron et .apprenant-chevron ailleurs dans
+   ce dépôt, ici scopée à .recent-row plutôt qu'à une classe dédiée : c'est
+   le seul endroit où .recent-row sert de bouton accordéon. */
+.r-toggle-chevron {
+  transition: transform 0.18s;
+}
+
+.recent-row[aria-expanded='true'] .r-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+/* Tiroir des bonnes réponses. `display: flex` de toute règle auteur, même de
+   spécificité faible, l'emporte TOUJOURS sur le `display: none` de la
+   feuille UA qui fait fonctionner `[hidden]` (l'origine « auteur » prime sur
+   l'origine « UA » avant même de comparer les spécificités) : sans le
+   sélecteur suivant, le tiroir resterait visible replié. Même parade que
+   .adv-panel[hidden] un peu plus haut dans ce fichier. */
+.r-detail-bonnes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.r-detail-bonnes[hidden] {
+  display: none;
+}
+
 /* Confettis */
 .confetti {
   position: fixed;
@@ -3043,4 +3243,422 @@ a.recent-row {
   .score-hero {
     padding: var(--s-14) var(--s-11) var(--s-13);
   }
+}
+
+/* ---------- Écran formateur : tableau de bord ----------
+   Nouvel écran, index de l'espace formateur. Il réemploie .stack, .page-head,
+   .card.stack--tight, .field-row, .eyebrow, .subtle, .recent-row(--static),
+   .app-mark, .recent-row-body, .apprenant-note, .bar/.bar-fill, .dropzone (et
+   ses enfants) et .loading-screen SANS LES TOUCHER — y compris pour la mise en
+   page : le dépôt de PDF et les deux cartes s'empilent dans le MÊME .stack que
+   le reste de l'écran, comme sur chaque autre écran formateur, plutôt qu'une
+   grille à deux colonnes propre à cet écran. Le mockup source les mettait
+   côte à côte sur un canevas de démonstration à 1120px ; .app-main--wide (720px,
+   partagé par tout l'espace formateur) coupé en deux n'aurait laissé qu'environ
+   90px au nom d'une officine une fois la barre et l'effectif posés à côté —
+   assez pour « Pharmacie Meyd… », pas pour un vrai nom. Une seule colonne pleine
+   largeur règle le problème et rejoint l'idiome du reste du dépôt.
+   Seules HUIT classes neuves ci-dessous (plus un modificateur), pour ce que
+   rien d'existant ne couvrait : le bandeau de chiffres sur encre, et la ligne
+   « officine + barre + effectif » qui n'a pas d'équivalent ailleurs.
+   AUCUNE couleur neuve : chaque token ci-dessous est déjà défini et déjà
+   audité dans index.css ou plus haut dans ce fichier. */
+
+/* Bandeau de chiffres. Fond --ink plein (pas composé) : les ratios ci-dessous
+   sont calculés directement contre lui, PAS ceux — différents — de
+   --ink-surface ou des aplats composés du thème encre de passation.
+   --on-ink-2 (rgba(255,255,255,.55)) sur --ink (#1f1d24) = 5,89:1.
+   --on-ink (#fff) sur --ink = 16,68:1. --gold-light sur --ink = 11,93:1.
+   Tous largement au-dessus des 4,5:1 requis (12-13px, aucune exemption
+   « grand texte » à ces tailles). */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s-11);
+  padding: var(--s-11) var(--s-9);
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.dash-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding-left: var(--s-11);
+  /* Filet PUREMENT DÉCORATIF entre deux chiffres, comme .meta-row-sep : aucun
+     contenu n'en dépend pour être compris, donc aucune exigence WCAG. Valeur
+     reprise telle quelle du mockup, faute de token dédié à un séparateur sur
+     fond encre plein (--line et ses dérivés sont de l'univers papier). */
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dash-stat:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.dash-stat-label {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--on-ink-2);
+}
+
+.dash-stat-value {
+  font-family: var(--serif);
+  font-size: 34px;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le score moyen seul porte l'or : c'est le chiffre qui résume tous les
+   autres, il doit se voir avant eux. Même recette que .app-mark (gold-light
+   sur ink), déjà auditée ailleurs dans ce fichier. */
+.dash-stat-value--accent {
+  color: var(--gold-light);
+}
+
+.dash-stat-note {
+  font-size: var(--t-label);
+  color: var(--on-ink-2);
+}
+
+/* Sous 720px : deux colonnes plutôt que quatre écrasées, et les filets
+   disparaissent — posés en colonnes, ils ne relieraient plus rien entre deux
+   rangées. Aucune information n'est perdue, contrairement au mockup mobile
+   source qui replie deux chiffres dans la légende des deux autres : les
+   quatre restent des chiffres à part entière. */
+@media (max-width: 719.98px) {
+  .dash-stats {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: var(--s-9);
+  }
+  .dash-stat {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* Ligne « officine + barre + effectif » de la carte Officines actives : ni
+   .recent-row-body (colonne à deux lignes) ni .apprenant-ligne (grille figée
+   à deux colonnes) ne correspondent à trois zones — nom flexible, barre à
+   largeur fixe, effectif à largeur fixe — d'où ces trois réglages, posés sur
+   des classes déjà existantes plutôt qu'une ligne réinventée de zéro.
+   Le nom réutilise la typo de .recent-row-title (ellipsis compris) ; la barre
+   réutilise .bar/.bar-fill (piste --line, remplissage --gold-line à 3,46:1,
+   déjà audité) ; l'effectif réutilise le gris de .recent-row-meta. */
+.dash-pharmacy-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 64px et non les 120px du mockup, qui tenait sa carte sur un canevas deux
+   fois plus large : la barre reste un renfort visuel du chiffre d'à côté,
+   jamais la zone qu'il faut agrandir aux dépens du nom. */
+.dash-pharmacy-bar {
+  flex: 0 0 64px;
+}
+
+.dash-pharmacy-count {
+  flex: 0 0 auto;
+  font-size: var(--t-label);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Écran formateur : Mes quiz (tableau dense) ----------
+   Un vrai <table> — première du dépôt — et non des lignes .recent-row : les
+   cinq colonnes (Quiz / Officine / Score moyen / Lien / Actions) sont une
+   grille de VALEURS comparables entre elles, pas une pile de cartes. <th
+   scope="col"> donne à chaque cellule son en-tête pour un lecteur d'écran
+   sans aucun rôle ARIA à poser à la main.
+   Layout AUTOMATIQUE (pas table-layout: fixed) : le navigateur mesure le
+   contenu de chaque colonne lui-même, Officine/Score/Lien/Actions restant
+   compactes pendant que Quiz absorbe l'espace restant — sans calcul manuel de
+   pourcentages. .quiz-table-scroll porte l'unique overflow-x: auto, à
+   l'intérieur d'une .card SANS bordure ni rayon neufs, pour que les coins
+   arrondis de la carte restent nets même quand la table déborde en largeur
+   (l'énoncé du lot l'autorise explicitement, pas seulement sous 720px).
+   Cinq classes neuves : .quiz-table(-scroll), .quiz-table-qr et
+   .quiz-table-link-action (aucune des deux n'a d'équivalent : la plus proche,
+   .btn-danger-link, tient en 25px de haut — sous le plancher WCAG 2.5.5 de
+   44px — et n'est de toute façon pas la même couleur ni le même sens),
+   .quiz-table-pharmacy-extra (le seul « +2 » à deux teintes du dépôt).
+   Tout le reste réemploie SANS LES TOUCHER : .card, .eyebrow (en-têtes de
+   colonne), .recent-row-body/-title/-meta, .tag (étiquette Fermé/Expiré),
+   .bar/.bar-fill (score moyen), .apprenant-note (le pourcentage, tabulaire),
+   .subtle (tirets d'absence), .btn/.btn--icon/.btn--ghost (actions ≥52px,
+   au-dessus du plancher de 44px que le mockup source manquait à 40px),
+   .field/.field-label/.input (recherche) et .tag-row (rangée de filtres).
+   AUCUNE couleur neuve : chaque token ci-dessous est déjà défini et déjà
+   audité dans index.css ou plus haut dans ce fichier. */
+.quiz-table-scroll {
+  overflow-x: auto;
+}
+
+.quiz-table {
+  width: 100%;
+  /* Empêche les quatre colonnes de droite de s'écraser l'une sur l'autre
+     avant que .quiz-table-scroll ne prenne le relais par défilement — seuil
+     mesuré au contenu réel (titre de quiz le plus long observé + les quatre
+     colonnes compactes), pas à un appareil. */
+  min-width: 640px;
+  border-collapse: collapse;
+}
+
+.quiz-table th,
+.quiz-table td {
+  padding: var(--s-6) var(--s-7);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* Taille et couleur de base d'une cellule de DONNÉE : reprend le corps de
+   lecture --t-body/--text-2 déjà utilisé dans tout le dépôt (.meta-row entre
+   autres), ni les 16px par défaut du navigateur (aucune règle du fichier ne
+   fixe de taille sur html/body) ni le texte secondaire --t-label/--text-3 de
+   .subtle — trop discret pour le nom d'une officine. La colonne Quiz
+   (.recent-row-title/-meta) et le score (.apprenant-note) posent leur propre
+   taille par-dessus ; le « — » d'absence reste sur .subtle, plus effacé à
+   dessein. Les en-têtes (<th>) portent .eyebrow, qui fixe déjà les siens. */
+.quiz-table td {
+  font-size: var(--t-body);
+  color: var(--text-2);
+}
+
+.quiz-table thead th {
+  background: var(--paper);
+  white-space: nowrap;
+}
+
+.quiz-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* La colonne Quiz ne descend jamais sous cette largeur : sans plancher, un
+   navigateur en layout automatique la sacrifierait la première pour laisser
+   de la place aux quatre colonnes compactes, avec un titre coupé à quelques
+   lettres. .recent-row-title garde son ellipsis pour le cas, rare, où même ce
+   plancher ne suffit pas. */
+.quiz-table td:first-child {
+  min-width: 220px;
+  /* Plafond, pas un choix esthétique : en layout automatique, une colonne SANS
+     max-width grandit avec son contenu. Sans lui, un titre extrême élargirait
+     la colonne Quiz au lieu de se laisser abréger par l'ellipsis de
+     .recent-row-title, qui n'a alors plus aucune largeur bornée où agir. */
+  max-width: 420px;
+}
+
+/* Les quatre colonnes de droite restent sur UNE ligne — .app-main--wide
+   (720px, partagé par tout l'espace formateur) est trop étroit pour
+   « Pharmacie Meydeba » ET son « +2 » côte à côte sans repli à la ligne, et un
+   repli y ferait varier la hauteur d'une ligne à l'autre selon la longueur du
+   nom d'officine. C'est justement ce que .quiz-table-scroll est là pour
+   absorber : la table entière défile plutôt qu'une seule cellule ne se
+   déforme. La colonne Quiz n'en fait pas partie : son ellipsis (.recent-row-
+   title) gère déjà le débordement sans le reporter sur la table. */
+.quiz-table td:not(:first-child) {
+  white-space: nowrap;
+}
+
+/* Miniature de QR — décorative (aria-hidden), l'action réelle est le titre du
+   quiz ou le chevron « Ouvrir » juste à côté. 36px et non les 44px d'une
+   cible tactile : elle ne répond à aucun clic. Le rayon --r-xs (8px) et la
+   bordure --line reprennent tels quels ceux de .qr-frame, à l'échelle d'une
+   vignette. */
+.quiz-table-qr {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+/* Action textuelle de la colonne Lien (Copier / Réouvrir / Prolonger le
+   lien) : même encre que .app-bar-link et .btn-copy (--gold-deep, 5,46:1 sur
+   #fdfbf6 documenté dans index.css) mais SANS bordure ni fond, pour rester
+   discrète au milieu d'une ligne de tableau. min-height: var(--h-min) est ce
+   que .btn-danger-link n'a pas — sous son couvert le mockup serait resté à
+   une trentaine de pixels, sous le plancher de 44px (WCAG 2.5.5) — et c'est
+   la raison même de cette classe plutôt qu'une réutilisation de la sienne. */
+.quiz-table-link-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--h-min);
+  padding: 0 var(--s-3);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--gold-deep);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.quiz-table-link-action:hover {
+  color: var(--gold-deep-hover);
+}
+
+/* Le « +2 » de la colonne Officine (« Meydeba +2 ») : même gris que
+   .recent-row-meta, hérite la taille du texte qui le précède plutôt que d'en
+   fixer une. */
+.quiz-table-pharmacy-extra {
+  color: var(--text-3);
+}
+
+/* ---------- Écran formateur : Résultats d'un quiz (mockup « Direction
+   retenue », 04 · Résultats) ----------
+   Réutilise SANS LES TOUCHER : .stack, .page-head, .meta-row(-sep), .btn(
+   --ghost), .card, .quiz-table(-scroll) et ses cellules — le tableau
+   Apprenant/Officine/Score/Envoyé le a EXACTEMENT la forme de celui de « Mes
+   quiz » (MesQuiz.jsx) — .recent-row-title (colonne Apprenant, ellipsis
+   compris), .subtle (tirets et date), .apprenant-note (le score, tabulaire),
+   .eyebrow (en-têtes de colonne et titres de bloc), .stack--tight, .notice,
+   .question-stat(-titre/-meta), .bar/.bar-fill, .tag,
+   .doc-preview(-head/-body/-line/-line--head), .empty-state, .loading-screen,
+   .error-slot, .split-actions.
+   TROIS classes neuves ci-dessous, pour ce que rien d'existant ne couvrait :
+   la mise en page à deux colonnes elle-même, le fil d'Ariane (aucun écran du
+   dépôt n'en avait encore), et le point vert/rouge du score (aucune pastille
+   PLEINE — .choice-dot et .q-option-dot sont des anneaux — n'existait avant
+   ce lot). AUCUNE couleur neuve : chaque token ci-dessous est déjà défini et
+   déjà audité dans index.css ou plus haut dans ce fichier. */
+
+/* Colonne principale plus large que la latérale (1,6fr / 1fr) : la première
+   porte un tableau à quatre colonnes, la seconde deux cartes étroites. Une
+   seule colonne en dessous de 720px — .app-main--wide reste le seul palier de
+   largeur de tout l'espace formateur — et dans l'ordre du JSX : la colonne
+   latérale (« Ce qu'il faut reprendre » puis l'aperçu du PDF) après la
+   principale, jamais avant, comme demandé pour le mobile. */
+.results-layout {
+  display: grid;
+  gap: var(--s-10);
+  align-items: start;
+}
+
+/* Sans cette ligne, la grille « éclate » : la taille minimale AUTOMATIQUE d'un
+   item de grille est celle de son contenu, pas celle de la piste — le tableau
+   à 640px de large (.quiz-table) imposerait alors sa largeur à toute la page
+   sous 720px, où .results-layout n'a qu'UNE colonne (implicite, pas encore
+   1,6fr/1fr). .quiz-table-scroll (overflow-x: auto, déjà audité pour « Mes
+   quiz ») ne suffit pas seul à l'empêcher : cette réduction automatique à zéro
+   ne s'applique qu'à un item DIRECT de grille ou de flex, et .card (qui la
+   porte) est ici un item de .stack, pas de .results-layout. */
+.results-layout > * {
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  .results-layout {
+    grid-template-columns: 1.6fr 1fr;
+  }
+}
+
+/* Fil d'Ariane. --text-3 (#6b6459) sur --paper-3 : 4,87:1, déjà documenté et
+   réutilisé tel quel (WCAG 1.4.3, 13px). Les liens n'ajoutent PAS le
+   soulignement de la règle globale `a` (index.css) : à cette taille et dans
+   une rangée de trois à cinq mots, il alourdirait plus qu'il n'aiderait —
+   .app-bar-link fait le même choix pour la même raison. La page courante
+   n'est JAMAIS un lien : ni curseur, ni couleur de lien, seulement
+   `aria-current="page"` et un texte plus soutenu (--text-2, 8,79:1). */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  font-size: var(--t-label);
+  color: var(--text-3);
+}
+
+.breadcrumb a {
+  color: var(--text-3);
+  border-bottom: 0;
+}
+
+.breadcrumb a:hover {
+  color: var(--gold-deep);
+}
+
+.breadcrumb-current {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+/* Point de la colonne Score : PUREMENT DÉCORATIF, jamais le seul porteur de
+   l'information (WCAG 1.4.1) — le score exact reste toujours écrit en toutes
+   lettres juste à côté (.apprenant-note), comme la barre de
+   .question-stat-titre porte déjà sa phrase en clair. Aucune exigence de
+   contraste ne s'applique donc à un aplat de 8px sans texte ni sémantique
+   propre (`aria-hidden="true"` côté JSX) ; --ok et --err sont repris tels
+   quels, déjà audités contre #fff (5,00:1 et 5,05:1, index.css l.108) pour
+   d'autres usages. */
+.score-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.score-dot--ok {
+  background: var(--ok);
+}
+
+.score-dot--low {
+  background: var(--err);
+}
+
+/* ---------- Écran formateur : Officines (maître-détail) ----------
+   Mockup « Direction retenue », 05 · Officines. Réutilise SANS LES TOUCHER :
+   .stack, .page-head, .error-slot, .sr-only, .notice, .loading-screen,
+   .empty-state(-icon), .field/.field-label/.input (le formulaire de création
+   ET le filtre), .recent-row(-body/-title/-meta) et .tag (la liste maître, sur
+   l'idiome de sélection déjà employé par AffecterOfficines.jsx — un `.tag`
+   « Sélectionnée » plutôt qu'une bordure neuve), .field-row, .btn(--ghost/--sm)
+   (« Fusionner un doublon… »), .tag-row/.app-bar-link (les deux liens vers les
+   flux profonds restants), .meta-row(-sep), .card, .quiz-table(-scroll) et ses
+   cellules, .apprenant-note et .subtle (le tableau des apprenants, à
+   l'identique de celui de QuizResults).
+   DEUX classes neuves seulement : la grille elle-même, et le titre du volet de
+   détail (un h2 — l'écran ne garde qu'un seul h1, voir OfficinesEspace.jsx).
+   AUCUNE couleur neuve. */
+.officines-layout {
+  display: grid;
+  gap: var(--s-10);
+  align-items: start;
+}
+
+.officines-layout > * {
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  /* 280px et non les 320px du mockup (canevas de démonstration à 1120px) :
+     .app-main--wide ne fait que 720px, et 320px n'y aurait laissé que 398px
+     au volet de détail — trop juste pour le tableau à quatre colonnes juste
+     en dessous, qui défile déjà par ailleurs (.quiz-table-scroll). */
+  .officines-layout {
+    grid-template-columns: 280px 1fr;
+  }
+}
+
+/* Titre du volet de détail : même typo que .page-head h1 (dupliquée, pas
+   partagée — voir le commentaire de tête du fichier sur Officines.jsx/
+   FicheOfficine.jsx, qui préfère la duplication à la généralisation entre
+   apprenants et officines). Un h2, jamais un second h1 : useFocusAuMontage ne
+   cible qu'UN titre par écran, et changer de sélection dans la liste maître ne
+   remonte pas l'écran — voler le focus à chaque clic serait une régression,
+   pas une amélioration. */
+.officine-detail-titre {
+  font-family: var(--serif);
+  font-size: var(--d-screen);
+  font-weight: 400;
+  line-height: var(--lh-display);
 }
