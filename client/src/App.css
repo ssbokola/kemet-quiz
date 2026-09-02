@@ -3367,42 +3367,40 @@ a.recent-row {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Écran formateur : Mes quiz (tableau dense) ----------
-   Un vrai <table> — première du dépôt — et non des lignes .recent-row : les
-   cinq colonnes (Quiz / Officine / Score moyen / Lien / Actions) sont une
-   grille de VALEURS comparables entre elles, pas une pile de cartes. <th
+/* ---------- Écran formateur : tableau de résultats d'UN quiz ----------
+   Un vrai <table> — première du dépôt — pour des VALEURS comparables entre
+   elles (Apprenant / Officine / Score / Envoyé le sur QuizResults.jsx). <th
    scope="col"> donne à chaque cellule son en-tête pour un lecteur d'écran
    sans aucun rôle ARIA à poser à la main.
    Layout AUTOMATIQUE (pas table-layout: fixed) : le navigateur mesure le
-   contenu de chaque colonne lui-même, Officine/Score/Lien/Actions restant
-   compactes pendant que Quiz absorbe l'espace restant — sans calcul manuel de
-   pourcentages. .quiz-table-scroll porte l'unique overflow-x: auto, à
-   l'intérieur d'une .card SANS bordure ni rayon neufs, pour que les coins
-   arrondis de la carte restent nets même quand la table déborde en largeur
-   (l'énoncé du lot l'autorise explicitement, pas seulement sous 720px).
-   Cinq classes neuves : .quiz-table(-scroll), .quiz-table-qr et
-   .quiz-table-link-action (aucune des deux n'a d'équivalent : la plus proche,
-   .btn-danger-link, tient en 25px de haut — sous le plancher WCAG 2.5.5 de
-   44px — et n'est de toute façon pas la même couleur ni le même sens),
-   .quiz-table-pharmacy-extra (le seul « +2 » à deux teintes du dépôt).
-   Tout le reste réemploie SANS LES TOUCHER : .card, .eyebrow (en-têtes de
-   colonne), .recent-row-body/-title/-meta, .tag (étiquette Fermé/Expiré),
-   .bar/.bar-fill (score moyen), .apprenant-note (le pourcentage, tabulaire),
-   .subtle (tirets d'absence), .btn/.btn--icon/.btn--ghost (actions ≥52px,
-   au-dessus du plancher de 44px que le mockup source manquait à 40px),
-   .field/.field-label/.input (recherche) et .tag-row (rangée de filtres).
-   AUCUNE couleur neuve : chaque token ci-dessous est déjà défini et déjà
-   audité dans index.css ou plus haut dans ce fichier. */
+   contenu de chaque colonne lui-même. .quiz-table-scroll porte l'unique
+   overflow-x: auto, à l'intérieur d'une .card SANS bordure ni rayon neufs,
+   pour que les coins arrondis de la carte restent nets même quand la table
+   déborde en largeur.
+   ⚠️ Utilisé UNIQUEMENT par QuizResults.jsx depuis le 03/09/2026 : « Mes
+   quiz » (MesQuiz.jsx) est passé à une liste de cartes (.quiz-list, plus
+   bas) après qu'un formateur a signalé en production que le tableau dense
+   forçait un défilement horizontal pour atteindre Score moyen/Lien/Actions,
+   et a refusé ce compromis même une fois le défilement rendu visible (ombre
+   ci-dessous, commit 6eba99e) — sur QuizResults.jsx, 4 colonnes texte SANS
+   action par ligne, le même débordement ne rend jamais un contrôle
+   inatteignable, seulement une lecture à faire défiler : risque jugé
+   acceptable, ce tableau reste inchangé.
+   Réemploie SANS LES TOUCHER : .card, .eyebrow (en-têtes de colonne),
+   .recent-row-title (colonne Apprenant, ellipsis), .subtle (tirets
+   d'absence). AUCUNE couleur neuve : chaque token ci-dessous est déjà
+   défini et déjà audité dans index.css ou plus haut dans ce fichier. */
 /* Ombres de défilement : sans elles, rien ne dit qu'il reste des colonnes à
-   droite (Score moyen, Lien, Actions) — un formateur signale le 02/09/2026
-   qu'il ne voyait que la table tronquée, sans savoir qu'un glisser vers la
-   droite l'atteignait. Technique sans JS : deux dégradés « caches » qui
-   défilent AVEC le contenu (background-attachment: local) masquent l'ombre
-   tant qu'il n'y a rien à cacher d'un côté, deux dégradés d'ombre restent
-   fixes par rapport à l'élément (background-attachment: scroll). Couleur de
-   l'ombre : même teinte que --shadow-card (rgba(31, 29, 36, …)), pas une
-   couleur neuve — seule l'opacité change, portée à 0,18 pour rester visible
-   sur --surface (blanc). */
+   droite — un formateur signale le 02/09/2026 qu'il ne voyait que la table
+   tronquée, sans savoir qu'un glisser vers la droite l'atteignait. Technique
+   sans JS : deux dégradés « caches » qui défilent AVEC le contenu
+   (background-attachment: local) masquent l'ombre tant qu'il n'y a rien à
+   cacher d'un côté, deux dégradés d'ombre restent fixes par rapport à
+   l'élément (background-attachment: scroll). Couleur de l'ombre : même
+   teinte que --shadow-card (rgba(31, 29, 36, …)), pas une couleur neuve —
+   seule l'opacité change, portée à 0,18 pour rester visible sur --surface
+   (blanc). Gardée pour QuizResults.jsx même si « Mes quiz » ne s'en sert
+   plus : voir la note ci-dessus. */
 .quiz-table-scroll {
   overflow-x: auto;
   background-image: linear-gradient(to right, var(--surface) 30%, rgba(255, 255, 255, 0)),
@@ -3470,16 +3468,104 @@ a.recent-row {
   max-width: 420px;
 }
 
-/* Les quatre colonnes de droite restent sur UNE ligne — .app-main--wide
-   (720px, partagé par tout l'espace formateur) est trop étroit pour
-   « Pharmacie Meydeba » ET son « +2 » côte à côte sans repli à la ligne, et un
-   repli y ferait varier la hauteur d'une ligne à l'autre selon la longueur du
-   nom d'officine. C'est justement ce que .quiz-table-scroll est là pour
-   absorber : la table entière défile plutôt qu'une seule cellule ne se
-   déforme. La colonne Quiz n'en fait pas partie : son ellipsis (.recent-row-
-   title) gère déjà le débordement sans le reporter sur la table. */
+/* Les colonnes de droite (Officine/Score/Envoyé le sur QuizResults.jsx)
+   restent sur UNE ligne — une date ou un pourcentage coupé au milieu serait
+   illisible. .quiz-table-scroll est là pour absorber le cas rare où ça ne
+   tient pas : la table entière défile plutôt qu'une seule cellule ne se
+   déforme. La colonne Apprenant n'en fait pas partie : son ellipsis
+   (.recent-row-title) gère déjà le débordement sans le reporter sur la
+   table. */
 .quiz-table td:not(:first-child) {
   white-space: nowrap;
+}
+
+/* ---------- Écran formateur : Mes quiz (liste de cartes) ----------
+   Remplace depuis le 03/09/2026 un <table> dense (.quiz-table, ci-dessus,
+   resté en place pour QuizResults.jsx) qui forçait un défilement horizontal
+   pour atteindre Score moyen/Lien/Actions dès qu'une officine ou un titre de
+   quiz réel dépassait ce que .app-main--wide (720px) laisse tenir sur une
+   ligne. L'utilisateur a refusé ce compromis même une fois le défilement
+   rendu visible (ombre plus haut) — mais a aussi refusé de perdre les
+   raccourcis par ligne (QR, Copier/Réouvrir/Prolonger, Résultats, Ouvrir)
+   en revenant à un simple lien plein-ligne. Solution : chaque quiz devient
+   une .card qui s'empile en HAUTEUR (flex-wrap sur la rangée d'actions)
+   plutôt que de déborder en LARGEUR — aucune media query dédiée, le
+   flex-wrap absorbe 320px comme 720px de la même façon.
+   .quiz-table-qr et .quiz-table-link-action survivent intactes au
+   changement de disposition : leur nom garde le radical "table" pour
+   éviter un renommage sans bénéfice réel, mais elles ne sont plus des
+   cellules — seulement des enfants de .quiz-card-row, un conteneur flex
+   ordinaire. .quiz-table-pharmacy-extra est devenue .quiz-card-extra (même
+   règle, nom aligné sur le nouveau conteneur). Réemploie SANS LES TOUCHER :
+   .card, .recent-row-body/-title/-meta, .tag, .bar/.bar-fill,
+   .apprenant-note, .subtle, .btn/.btn--icon/.btn--ghost, .sr-only. AUCUNE
+   couleur neuve. */
+.quiz-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.quiz-card {
+  padding: var(--s-6) var(--s-7);
+}
+
+/* flex-wrap est la seule ligne qui compte ici : rien dans cette rangée ne
+   porte de white-space: nowrap non borné, donc rien ne peut jamais forcer
+   .quiz-list à déborder horizontalement, à aucune largeur. */
+.quiz-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4) var(--s-6);
+  margin-top: var(--s-4);
+}
+
+/* Nom d'officine : largeur bornée + ellipsis, comme .recent-row-title — un
+   nom très long est tronqué LOCALEMENT, jamais responsable d'un débordement
+   du groupe .quiz-card-row. */
+.quiz-card-officine {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le « +2 » de l'officine (« Meydeba +2 ») : même gris que .recent-row-meta,
+   hérite la taille du texte qui le précède plutôt que d'en fixer une. */
+.quiz-card-extra {
+  color: var(--text-3);
+}
+
+.quiz-card-score {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* Largeur fixe et modeste : la barre est décorative (aria-hidden), le
+   pourcentage à côté porte seule l'information réelle. */
+.quiz-card-score .bar {
+  width: 60px;
+}
+
+.quiz-card-lien {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* margin-left: auto pousse Résultats/Ouvrir à droite tant que tout tient sur
+   une ligne, et les laisse redescendre proprement à la ligne suivante sinon
+   (flex-wrap du parent) — jamais de défilement. */
+.quiz-card-actions {
+  display: flex;
+  gap: var(--s-3);
+  margin-left: auto;
 }
 
 /* Miniature de QR — décorative (aria-hidden), l'action réelle est le titre du
@@ -3501,10 +3587,10 @@ a.recent-row {
 /* Action textuelle de la colonne Lien (Copier / Réouvrir / Prolonger le
    lien) : même encre que .app-bar-link et .btn-copy (--gold-deep, 5,46:1 sur
    #fdfbf6 documenté dans index.css) mais SANS bordure ni fond, pour rester
-   discrète au milieu d'une ligne de tableau. min-height: var(--h-min) est ce
-   que .btn-danger-link n'a pas — sous son couvert le mockup serait resté à
-   une trentaine de pixels, sous le plancher de 44px (WCAG 2.5.5) — et c'est
-   la raison même de cette classe plutôt qu'une réutilisation de la sienne. */
+   discrète au milieu de la rangée. min-height: var(--h-min) est ce que
+   .btn-danger-link n'a pas — sous son couvert le mockup serait resté à une
+   trentaine de pixels, sous le plancher de 44px (WCAG 2.5.5) — et c'est la
+   raison même de cette classe plutôt qu'une réutilisation de la sienne. */
 .quiz-table-link-action {
   display: inline-flex;
   align-items: center;
@@ -3523,13 +3609,6 @@ a.recent-row {
 
 .quiz-table-link-action:hover {
   color: var(--gold-deep-hover);
-}
-
-/* Le « +2 » de la colonne Officine (« Meydeba +2 ») : même gris que
-   .recent-row-meta, hérite la taille du texte qui le précède plutôt que d'en
-   fixer une. */
-.quiz-table-pharmacy-extra {
-  color: var(--text-3);
 }
 
 /* ---------- Écran formateur : Résultats d'un quiz (mockup « Direction

@@ -333,163 +333,137 @@ function MesQuiz() {
         </div>
       )}
 
+      {/* Liste de cartes, pas un tableau : chaque quiz s'empile en hauteur
+          (.quiz-card-row est flex-wrap) plutôt que de déborder en largeur —
+          voir le commentaire de tête dans App.css pour pourquoi ce chantier
+          a remplacé le tableau dense. */}
       {!chargement && resultat && resultat.length > 0 && (
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div className="quiz-table-scroll">
-            <table className="quiz-table">
-              <thead>
-                <tr>
-                  <th scope="col">
-                    <span className="eyebrow">Quiz</span>
-                  </th>
-                  <th scope="col">
-                    <span className="eyebrow">Officine</span>
-                  </th>
-                  <th scope="col">
-                    <span className="eyebrow">Score moyen</span>
-                  </th>
-                  <th scope="col">
-                    <span className="eyebrow">Lien</span>
-                  </th>
-                  <th scope="col">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {resultat.map((q) => {
-                  const etat = etatDuQuiz(q);
-                  const lien = lienPublic(q.id);
-                  const moyenne = pourcentArrondi(q.avgPercent);
-                  const aOfficine = q.pharmacyCount > 0;
+        <ul className="quiz-list">
+          {resultat.map((q) => {
+            const etat = etatDuQuiz(q);
+            const lien = lienPublic(q.id);
+            const moyenne = pourcentArrondi(q.avgPercent);
+            const aOfficine = q.pharmacyCount > 0;
 
-                  return (
-                    <tr key={q.id}>
-                      {/* Quiz : titre (lien vers le partage) + étiquette
-                          d'état + méta. L'état se dit par un MOT, jamais par
-                          la seule couleur (WCAG 1.4.1) : « en ligne » n'a pas
-                          d'étiquette, c'est le cas nominal, et le signaler
-                          noierait les deux qui demandent une action. */}
-                      <td>
-                        <div className="recent-row-body">
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-3)', minWidth: 0 }}>
-                            <Link to={chemins.partage(q.id)} className="recent-row-title" style={{ minWidth: 0 }}>
-                              {q.title}
-                            </Link>
-                            {etat !== 'en ligne' && (
-                              <span className="tag">{etat === 'fermé' ? 'Fermé' : 'Expiré'}</span>
-                            )}
-                          </span>
-                          <span className="recent-row-meta">
-                            {formatJour(q.createdAt)} · {q.resultCount} réponse
-                            {q.resultCount > 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      </td>
+            return (
+              <li key={q.id} className="card quiz-card">
+                {/* Identité : titre (lien vers le partage) + étiquette
+                    d'état + méta. L'état se dit par un MOT, jamais par la
+                    seule couleur (WCAG 1.4.1) : « en ligne » n'a pas
+                    d'étiquette, c'est le cas nominal, et le signaler
+                    noierait les deux qui demandent une action. */}
+                <div className="recent-row-body">
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-3)', minWidth: 0 }}>
+                    <Link to={chemins.partage(q.id)} className="recent-row-title" style={{ minWidth: 0 }}>
+                      {q.title}
+                    </Link>
+                    {etat !== 'en ligne' && (
+                      <span className="tag">{etat === 'fermé' ? 'Fermé' : 'Expiré'}</span>
+                    )}
+                  </span>
+                  <span className="recent-row-meta">
+                    {formatJour(q.createdAt)} · {q.resultCount} réponse
+                    {q.resultCount > 1 ? 's' : ''}
+                  </span>
+                </div>
 
-                      {/* Officine : la plus fréquente, puis le nombre
-                          d'autres officines distinctes s'il y en a. */}
-                      <td>
-                        {aOfficine ? (
-                          <span>
-                            {q.topPharmacyName}
-                            {q.pharmacyCount > 1 && (
-                              <span className="quiz-table-pharmacy-extra"> +{q.pharmacyCount - 1}</span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="subtle">—</span>
+                <div className="quiz-card-row">
+                  {/* Officine : la plus fréquente, puis le nombre d'autres
+                      officines distinctes s'il y en a. */}
+                  <span className="quiz-card-officine">
+                    <span className="sr-only">Officine : </span>
+                    {aOfficine ? (
+                      <>
+                        {q.topPharmacyName}
+                        {q.pharmacyCount > 1 && (
+                          <span className="quiz-card-extra"> +{q.pharmacyCount - 1}</span>
                         )}
-                      </td>
+                      </>
+                    ) : (
+                      <span className="subtle">—</span>
+                    )}
+                  </span>
 
-                      {/* Score moyen : la barre est décorative, le
-                          pourcentage — seul porteur réel de l'information —
-                          est à côté en toutes lettres. */}
-                      <td>
-                        {moyenne !== null ? (
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-4)' }}>
-                            <span className="bar" style={{ flex: 1, minWidth: 40 }} aria-hidden="true">
-                              <span className="bar-fill" style={{ width: `${moyenne}%` }} />
-                            </span>
-                            <span className="apprenant-note">{moyenne} %</span>
-                          </span>
-                        ) : (
-                          <span className="subtle">—</span>
-                        )}
-                      </td>
+                  {/* Score moyen : la barre est décorative, le pourcentage —
+                      seul porteur réel de l'information — est à côté en
+                      toutes lettres. */}
+                  {moyenne !== null ? (
+                    <span className="quiz-card-score">
+                      <span className="sr-only">Score moyen : </span>
+                      <span className="bar" aria-hidden="true">
+                        <span className="bar-fill" style={{ width: `${moyenne}%` }} />
+                      </span>
+                      <span className="apprenant-note">{moyenne} %</span>
+                    </span>
+                  ) : (
+                    <span className="subtle">—</span>
+                  )}
 
-                      {/* Lien : miniature de QR (décorative) + l'action qui
-                          correspond à l'état RÉEL de ce quiz précis — jamais
-                          trois lignes figées, un seul rendu conditionnel. */}
-                      <td>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-4)' }}>
-                          {etat !== 'expiré' && (
-                            <span
-                              className="quiz-table-qr"
-                              aria-hidden="true"
-                              style={etat === 'fermé' ? { opacity: 0.4 } : undefined}
-                            >
-                              <QRCodeSVG value={lien} size={36} bgColor="#ffffff" fgColor="#1f1d24" level="M" />
-                            </span>
-                          )}
-                          {etat === 'en ligne' && (
-                            <button
-                              type="button"
-                              className="quiz-table-link-action"
-                              onClick={() => copierLien(q)}
-                            >
-                              {copiedId === q.id ? 'Copié' : 'Copier'}
-                            </button>
-                          )}
-                          {etat === 'fermé' && (
-                            <button
-                              type="button"
-                              className="quiz-table-link-action"
-                              onClick={() => reouvrir(q)}
-                              aria-busy={reouvertureId === q.id}
-                            >
-                              {reouvertureId === q.id ? 'Patientez…' : 'Réouvrir'}
-                            </button>
-                          )}
-                          {etat === 'expiré' && (
-                            <Link className="quiz-table-link-action" to={chemins.partage(q.id)}>
-                              Prolonger le lien
-                            </Link>
-                          )}
-                        </span>
-                      </td>
+                  {/* Lien : miniature de QR (décorative) + l'action qui
+                      correspond à l'état RÉEL de ce quiz précis — jamais
+                      trois lignes figées, un seul rendu conditionnel. */}
+                  <span className="quiz-card-lien">
+                    {etat !== 'expiré' && (
+                      <span
+                        className="quiz-table-qr"
+                        aria-hidden="true"
+                        style={etat === 'fermé' ? { opacity: 0.4 } : undefined}
+                      >
+                        <QRCodeSVG value={lien} size={36} bgColor="#ffffff" fgColor="#1f1d24" level="M" />
+                      </span>
+                    )}
+                    {etat === 'en ligne' && (
+                      <button
+                        type="button"
+                        className="quiz-table-link-action"
+                        onClick={() => copierLien(q)}
+                      >
+                        {copiedId === q.id ? 'Copié' : 'Copier'}
+                      </button>
+                    )}
+                    {etat === 'fermé' && (
+                      <button
+                        type="button"
+                        className="quiz-table-link-action"
+                        onClick={() => reouvrir(q)}
+                        aria-busy={reouvertureId === q.id}
+                      >
+                        {reouvertureId === q.id ? 'Patientez…' : 'Réouvrir'}
+                      </button>
+                    )}
+                    {etat === 'expiré' && (
+                      <Link className="quiz-table-link-action" to={chemins.partage(q.id)}>
+                        Prolonger le lien
+                      </Link>
+                    )}
+                  </span>
 
-                      {/* Actions : Résultats (seulement s'il y a quelque
-                          chose à montrer) et Ouvrir. ≥52px de cible tactile
-                          (.btn--icon), au-dessus des 40px du mockup source et
-                          largement au-dessus du plancher WCAG 2.5.5 (44px). */}
-                      <td>
-                        <span style={{ display: 'flex', gap: 'var(--s-3)', justifyContent: 'flex-end' }}>
-                          {q.resultCount > 0 && (
-                            <Link
-                              className="btn btn--icon btn--ghost"
-                              to={chemins.resultats(q.id)}
-                              aria-label={`Résultats de ${q.title}`}
-                            >
-                              <Icon name="chart" size={18} width={1.7} />
-                            </Link>
-                          )}
-                          <Link
-                            className="btn btn--icon btn--ghost"
-                            to={chemins.partage(q.id)}
-                            aria-label={`Ouvrir ${q.title}`}
-                          >
-                            <Icon name="chevronRight" size={18} width={1.7} />
-                          </Link>
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  {/* Actions : Résultats (seulement s'il y a quelque chose à
+                      montrer) et Ouvrir. ≥52px de cible tactile (.btn--icon),
+                      au-dessus du plancher WCAG 2.5.5 (44px). */}
+                  <span className="quiz-card-actions">
+                    {q.resultCount > 0 && (
+                      <Link
+                        className="btn btn--icon btn--ghost"
+                        to={chemins.resultats(q.id)}
+                        aria-label={`Résultats de ${q.title}`}
+                      >
+                        <Icon name="chart" size={18} width={1.7} />
+                      </Link>
+                    )}
+                    <Link
+                      className="btn btn--icon btn--ghost"
+                      to={chemins.partage(q.id)}
+                      aria-label={`Ouvrir ${q.title}`}
+                    >
+                      <Icon name="chevronRight" size={18} width={1.7} />
+                    </Link>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
