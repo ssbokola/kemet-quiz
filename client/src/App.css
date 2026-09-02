@@ -3393,8 +3393,27 @@ a.recent-row {
    .field/.field-label/.input (recherche) et .tag-row (rangée de filtres).
    AUCUNE couleur neuve : chaque token ci-dessous est déjà défini et déjà
    audité dans index.css ou plus haut dans ce fichier. */
+/* Ombres de défilement : sans elles, rien ne dit qu'il reste des colonnes à
+   droite (Score moyen, Lien, Actions) — un formateur signale le 02/09/2026
+   qu'il ne voyait que la table tronquée, sans savoir qu'un glisser vers la
+   droite l'atteignait. Technique sans JS : deux dégradés « caches » qui
+   défilent AVEC le contenu (background-attachment: local) masquent l'ombre
+   tant qu'il n'y a rien à cacher d'un côté, deux dégradés d'ombre restent
+   fixes par rapport à l'élément (background-attachment: scroll). Couleur de
+   l'ombre : même teinte que --shadow-card (rgba(31, 29, 36, …)), pas une
+   couleur neuve — seule l'opacité change, portée à 0,18 pour rester visible
+   sur --surface (blanc). */
 .quiz-table-scroll {
   overflow-x: auto;
+  background-image: linear-gradient(to right, var(--surface) 30%, rgba(255, 255, 255, 0)),
+    linear-gradient(to right, rgba(255, 255, 255, 0), var(--surface) 70%),
+    linear-gradient(to right, rgba(31, 29, 36, 0.18), rgba(31, 29, 36, 0)),
+    linear-gradient(to left, rgba(31, 29, 36, 0.18), rgba(31, 29, 36, 0));
+  background-repeat: no-repeat;
+  background-color: var(--surface);
+  background-size: 32px 100%, 32px 100%, 12px 100%, 12px 100%;
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  background-attachment: local, local, scroll, scroll;
 }
 
 .quiz-table {
