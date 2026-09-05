@@ -1,10 +1,10 @@
 # Kemet Quiz — Handoff technique
 
-**Dernière mise à jour :** 2 septembre 2026
+**Dernière mise à jour :** 5 septembre 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit déployé :** `0d88f57` — *Reorganiser la navigation formateur d'apres un mockup Claude Design* (§17)
-**Non encore déployé à cette mise à jour :** `dbee414` — « Mes quiz » n'est plus un tableau mais une liste de cartes (voir §17, sous-section dédiée) : le tableau dense déployé dans `0d88f57` forçait un défilement horizontal en production, l'utilisateur l'a refusé même une fois le défilement rendu visible (`6eba99e`, superseded par `dbee414`, gardé pour l'historique). Code écrit, testé et vérifié, en attente du feu vert pour le push.
+**Dernier commit déployé :** `05b4a38` — « Mes quiz » n'est plus un tableau, liste de cartes (§17)
+**Non encore déployé à cette mise à jour :** revue de code du chantier §17 (voir §17, sous-section « Revue de code ») — un vrai bug (sélection d'officine qui ignore le filtre) et quatre corrections de qualité (bandeau d'alerte disparu, troncature PDF, débordement horizontal résiduel sur Résultats, commentaire obsolète). Code écrit, testé (`npm test` 11/11, `npm run build`), en attente du feu vert pour le push.
 
 ---
 
@@ -868,3 +868,17 @@ Exactement le doute relevé juste au-dessus : l'utilisateur a signalé en produc
 `QuizResults.jsx` **garde** `.quiz-table`/`.quiz-table-scroll` (y compris l'ombre de défilement du commit `6eba99e`, pas perdue) : son tableau à 4 colonnes texte, sans action par ligne, n'a pas le même risque — un débordement y coûte une lecture à faire défiler, jamais un contrôle inatteignable. Repensé si le même signalement revient sur cet écran, pas avant.
 
 **Vérifié réellement, pas seulement relu** : le tableau précédent avait été vérifié par lecture de code et par des agents (voir plus haut), et le problème n'avait pas été vu avant la production — cette fois, une page de test isolée a été servie par le serveur de développement (`client/public/`, supprimée ensuite) avec les données réellement défavorables (« Pharmacie MEDEBA +1 », un titre de quiz extra-long, un quiz sans réponse, fermé, expiré), mesurée à 1280/720/375/320 px : aucun débordement à aucun de ces paliers, capture d'écran à l'appui. Leçon retenue en plus de celle sur les rapports d'agents (plus haut) : pour un écran derrière le mot de passe formateur, une page de test isolée avec les VRAIES données vaut mieux qu'une relecture de CSS, même soigneuse.
+
+### 05/09/2026 — Revue de code du chantier §17, un bug réel corrigé
+
+Une revue de code (8 angles + vérification à un vote) sur tout l'arc `0d88f57`→`dbee414` a fait remonter 8 constats, dont 2 écartés après vérification (aucun bug réel derrière) et 2 laissés en l'état car ce sont des choix de périmètre assumés pendant le chantier, pas des oublis (renommer une officine, fusionner vers n'importe quelle cible plutôt que les seuls doublons détectés — confirmé avec l'utilisateur). Cinq corrections appliquées :
+
+- **Bug réel** (`OfficinesEspace.jsx`) : le panneau détail retombait sur l'officine la plus fournie de tout l'annuaire, pas sur la première de la liste FILTRÉE — un formateur qui tapait une recherche avant tout clic voyait un détail hors du filtre affiché. Corrigé : le repli suit désormais la liste filtrée.
+- **Bandeau disparu** (`OfficinesEspace.jsx`) : l'ancien `Officines.jsx` alertait en haut d'écran quand aucun apprenant n'était rattaché à aucune officine ; ce signal avait disparu dans la fusion vers l'écran maître-détail. Réintroduit.
+- **Export PDF** (`QuizResults.jsx`) : la troncature des noms coupait par unité UTF-16 (`slice`), pas par caractère réel (`Array.from`) — un nom avec un emoji aurait pu couper une paire de substitution en deux. Corrigé, même parti pris que `Dashboard.jsx`.
+- **Débordement résiduel** (`QuizResults.jsx`) : la colonne Officine du tableau des réponses avait le même défaut que celui corrigé sur « Mes quiz » le 03/09 (texte non borné forçant un défilement). Bornée en largeur avec ellipsis, comme la colonne Apprenant.
+- **Performance** (`OfficinesEspace.jsx`) : les statistiques par officine étaient recalculées à chaque frappe dans le filtre pour chaque officine visible ; mises en cache dans une seule passe mémoïsée.
+
+Un commentaire de tête obsolète (prétendait que deux fichiers supprimés « restent, orphelins ») a aussi été corrigé.
+
+Vérifié : `npm test` (11/11) et `npm run build`, deux fois. Pas de vérification navigateur (écran protégé par mot de passe) : relecture de code uniquement pour ce lot, comme pour le reste de l'espace formateur non rejoué en direct.

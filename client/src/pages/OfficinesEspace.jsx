@@ -87,8 +87,11 @@ function statsOfficine(officineId, apprenants) {
  * Renommer une officine n'a plus d'entrée dans l'interface depuis ce lot —
  * l'ancienne fiche (FicheOfficine.jsx) portait ce geste en plus de la fusion,
  * et seule la fusion a une place dans la disposition maître-détail demandée
- * ici. FicheOfficine.jsx et Officines.jsx (l'ancienne liste) restent dans le
- * dépôt, orphelins : voir le rapport de ce lot.
+ * ici ; de même, fusionner ne se fait plus que sur les doublons détectés
+ * automatiquement, plus vers une cible choisie librement dans tout l'annuaire.
+ * Choix de périmètre assumé, pas un oubli — validé en revue de code. Les deux
+ * anciens fichiers (FicheOfficine.jsx, Officines.jsx) ont été supprimés par ce
+ * lot, pas laissés en place.
  */
 function OfficinesEspace() {
   const [vue, setVue] = useState('liste'); // liste | doublons | affecter | historique
@@ -255,17 +258,31 @@ function OfficinesMasterDetail({ onDoublons, onAffecter, onHistorique, messageEn
     };
   }, []);
 
+  // Une seule passe sur `apprenants` pour toutes les officines, mise en cache
+  // par id — au lieu de relancer statsOfficine() (filter+reduce sur tout le
+  // tableau) pour chaque officine visible à chaque rendu (tri, liste filtrée,
+  // détail), ce qui recalculait tout à chaque frappe dans le filtre.
+  const statsParOfficine = useMemo(() => {
+    const carte = new Map();
+    if (!officines || !apprenants) return carte;
+    for (const o of officines) carte.set(o.id, statsOfficine(o.id, apprenants));
+    return carte;
+  }, [officines, apprenants]);
+
+  const statsDe = (officineId) =>
+    statsParOfficine.get(officineId) || { effectif: 0, participations: 0, moyenne: null };
+
   // Les plus fournies d'abord — même lecture que « Officines actives » du
   // tableau de bord : c'est ce qu'un formateur veut voir en premier ici.
   const officinesTriees = useMemo(() => {
     if (!officines || !apprenants) return null;
     return [...officines].sort((a, b) => {
-      const ea = statsOfficine(a.id, apprenants).effectif;
-      const eb = statsOfficine(b.id, apprenants).effectif;
+      const ea = statsDe(a.id).effectif;
+      const eb = statsDe(b.id).effectif;
       if (eb !== ea) return eb - ea;
       return a.displayName.localeCompare(b.displayName, 'fr');
     });
-  }, [officines, apprenants]);
+  }, [officines, apprenants, statsParOfficine]);
 
   const officinesFiltrees = useMemo(() => {
     if (!officinesTriees) return null;
@@ -275,22 +292,21 @@ function OfficinesMasterDetail({ onDoublons, onAffecter, onHistorique, messageEn
   }, [officinesTriees, filtre]);
 
   // Dérivé, jamais synchronisé par un effet : si `selectionId` est encore nul,
-  // ou s'il désignait une officine qui a disparu depuis (fusionnée par
-  // exemple), on retombe sur la première de la liste triée — dès le premier
-  // rendu qui suit le chargement, sans un rendu intermédiaire « rien de
-  // sélectionné ».
+  // ou s'il désignait une officine absente de la liste FILTRÉE actuellement
+  // affichée (fusionnée depuis, ou exclue par le filtre texte), on retombe sur
+  // la première de cette même liste filtrée — jamais sur la liste complète,
+  // pour que le détail à droite corresponde toujours à ce qui est visible à
+  // gauche, même au tout premier rendu si un filtre est déjà tapé.
   const officineActuelleId =
-    selectionId && officines && officines.some((o) => o.id === selectionId)
+    selectionId && officinesFiltrees && officinesFiltrees.some((o) => o.id === selectionId)
       ? selectionId
-      : officinesTriees && officinesTriees[0]
-        ? officinesTriees[0].id
+      : officinesFiltrees && officinesFiltrees[0]
+        ? officinesFiltrees[0].id
         : null;
   const officineActuelle = officines
     ? officines.find((o) => o.id === officineActuelleId) || null
     : null;
-  const statsActuelle = officineActuelle && apprenants
-    ? statsOfficine(officineActuelle.id, apprenants)
-    : null;
+  const statsActuelle = officineActuelle ? statsDe(officineActuelle.id) : null;
   const apprenantsActuels =
     officineActuelle && apprenants
       ? apprenants
@@ -433,6 +449,17 @@ function OfficinesMasterDetail({ onDoublons, onAffecter, onHistorique, messageEn
             </div>
           </form>
 
+          {officines.length > 0 && totalRattaches === 0 && (
+            <p className="notice">
+              <Icon name="info" size={15} width={1.8} />
+              <span>
+                <b>Aucun apprenant n’est encore rattaché à une officine.</b> Utilisez
+                « Affecter en masse » depuis le détail d’une officine ci-dessous, ou
+                laissez vos apprenants choisir la leur en passant un quiz.
+              </span>
+            </p>
+          )}
+
           {officines.length === 0 && (
             <div className="empty-state">
               <span className="empty-state-icon" aria-hidden="true">
@@ -472,7 +499,7 @@ function OfficinesMasterDetail({ onDoublons, onAffecter, onHistorique, messageEn
                     <p className="subtle">Aucune officine ne correspond.</p>
                   ) : (
                     officinesFiltrees.map((o) => {
-                      const stats = statsOfficine(o.id, apprenants);
+                      const stats = statsDe(o.id);
                       const estActuelle = o.id === officineActuelleId;
                       return (
                         <button

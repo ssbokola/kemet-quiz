@@ -3472,11 +3472,20 @@ a.recent-row {
    restent sur UNE ligne — une date ou un pourcentage coupé au milieu serait
    illisible. .quiz-table-scroll est là pour absorber le cas rare où ça ne
    tient pas : la table entière défile plutôt qu'une seule cellule ne se
-   déforme. La colonne Apprenant n'en fait pas partie : son ellipsis
-   (.recent-row-title) gère déjà le débordement sans le reporter sur la
-   table. */
+   déforme. Les colonnes Apprenant ET Officine n'en font pas vraiment partie :
+   leur ellipsis (.recent-row-title) gère déjà le débordement sans le reporter
+   sur la table. */
 .quiz-table td:not(:first-child) {
   white-space: nowrap;
+}
+
+/* Officine (2e colonne, QuizResults.jsx) : même plafond que
+   .quiz-card-officine sur « Mes quiz » — un nom d'officine long (« Pharmacie
+   MEDEBA +1 ») se tronque LOCALEMENT via .recent-row-title au lieu de forcer
+   le défilement de toute la table, reproduction du défaut corrigé le
+   03/09/2026 sur « Mes quiz ». */
+.quiz-table td:nth-child(2) {
+  max-width: 220px;
 }
 
 /* ---------- Écran formateur : Mes quiz (liste de cartes) ----------

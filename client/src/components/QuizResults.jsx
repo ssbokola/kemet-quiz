@@ -299,12 +299,16 @@ function QuizResults() {
     // la ligne : une ligne de tableau qui grandit casserait l'alignement de
     // toutes les cellules qui la suivent sur la même rangée.
     const tronquer = (texte, largeur) => {
-      let t = String(texte ?? '');
-      if (doc.getTextWidth(t) <= largeur) return t;
-      while (t.length > 1 && doc.getTextWidth(`${t}…`) > largeur) {
-        t = t.slice(0, -1);
+      // Array.from itère par point de code, pas par unité UTF-16 : une paire
+      // de substitution (emoji, etc.) dans un nom saisi librement n'est jamais
+      // coupée en deux — contrairement à slice(), voir initiale() dans
+      // Dashboard.jsx pour le même parti pris ailleurs dans le dépôt.
+      const points = Array.from(String(texte ?? ''));
+      if (doc.getTextWidth(points.join('')) <= largeur) return points.join('');
+      while (points.length > 1 && doc.getTextWidth(`${points.join('')}…`) > largeur) {
+        points.pop();
       }
-      return `${t}…`;
+      return `${points.join('')}…`;
     };
 
     const enteteTableau = () => {
@@ -520,7 +524,9 @@ function QuizResults() {
                     {detail.results.map((r, i) => (
                       <tr key={r.resultId ?? i}>
                         <td className="recent-row-title">{r.playerName}</td>
-                        <td>{r.pharmacyName || <span className="subtle">—</span>}</td>
+                        <td className="recent-row-title">
+                          {r.pharmacyName || <span className="subtle">—</span>}
+                        </td>
                         <td>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-3)' }}>
                             <span
