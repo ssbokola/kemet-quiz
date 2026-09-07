@@ -302,7 +302,11 @@ function PartageQuiz() {
       )}
 
       <div className="qr-frame">
-        <QRCodeSVG value={quizLink} size={176} bgColor="#ffffff" fgColor="#1f1d24" level="M" />
+        {/* `size` ne fixe que la résolution interne du SVG (sa netteté) : la
+            taille RÉELLEMENT affichée vient du CSS (.qr-frame svg, App.css),
+            qui l'étire à toute la largeur disponible — beaucoup plus lisible
+            de loin qu'à 176px, sur un écran projeté ou un mur d'affichage. */}
+        <QRCodeSVG value={quizLink} size={420} bgColor="#ffffff" fgColor="#1f1d24" level="M" />
         <p className="qr-label">Faites scanner ce code à l’écran</p>
       </div>
 

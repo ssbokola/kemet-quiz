@@ -3,8 +3,8 @@
 **Dernière mise à jour :** 5 septembre 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit déployé :** `05b4a38` — « Mes quiz » n'est plus un tableau, liste de cartes (§17)
-**Non encore déployé à cette mise à jour :** revue de code du chantier §17 (voir §17, sous-section « Revue de code ») — un vrai bug (sélection d'officine qui ignore le filtre) et quatre corrections de qualité (bandeau d'alerte disparu, troncature PDF, débordement horizontal résiduel sur Résultats, commentaire obsolète). Code écrit, testé (`npm test` 11/11, `npm run build`), en attente du feu vert pour le push.
+**Dernier commit déployé :** `ca1941e` — 5 corrections de la revue de code du chantier navigation (§17)
+**Non encore déployé à cette mise à jour :** QR code de l'écran de partage agrandi (voir §17, sous-section « QR code agrandi »). Code écrit, testé (`npm test` 11/11, `npm run build`), en attente du feu vert pour le push.
 
 ---
 
@@ -882,3 +882,13 @@ Une revue de code (8 angles + vérification à un vote) sur tout l'arc `0d88f57`
 Un commentaire de tête obsolète (prétendait que deux fichiers supprimés « restent, orphelins ») a aussi été corrigé.
 
 Vérifié : `npm test` (11/11) et `npm run build`, deux fois. Pas de vérification navigateur (écran protégé par mot de passe) : relecture de code uniquement pour ce lot, comme pour le reste de l'espace formateur non rejoué en direct.
+
+### 05/09/2026 — QR code agrandi sur l'écran de partage
+
+Demande directe : « je veux un qr code plus gros une fois le quizz créé ; beaucoup beaucoup beaucoup plus gros ». Le QR de `PartageQuiz.jsx` (`/formateur/quiz/:id`, l'écran qu'on atteint juste après la création) était fixé à 176px par CSS/JS, quelle que soit la largeur d'écran.
+
+**Solution** : `size={420}` côté `QRCodeSVG` (qualité interne du SVG, pas sa taille affichée) + une règle CSS neuve (`.qr-frame svg`) qui l'étire à `width: 100%` de `.qr-frame` avec un plafond `max-width: 420px` — le SVG est vectoriel, l'agrandir ne le pixellise pas. `.qr-frame` hérite déjà de 100% de largeur de `.stack` (flex column, `align-items: stretch` par défaut), donc le QR remplit vraiment l'écran disponible au lieu de rester une vignette perdue au milieu.
+
+**Résultat mesuré** (page de test isolée avec le vrai composant `QRCodeSVG`, quatre largeurs de conteneur explicites — le viewport émulé du navigateur de test ne prend pas toujours effet, contournement déjà utilisé le 03/09) : 234px à 320px de large (mobile étroit), 289px à 375px, 394px à 480px, puis le plafond de 420px atteint dès 720px (le palier de `.app-main--wide`) et conservé jusqu'à 1280px — aucun débordement à aucune largeur (`scrollWidth === clientWidth` du cadre partout). Plus de 2× la taille précédente sur desktop, sans jamais dépasser l'écran sur mobile.
+
+Vérifié : `npm test` (11/11), `npm run build`, page de test React isolée servie par le serveur de dev puis supprimée (même méthode que le 03/09 pour un écran protégé par mot de passe).
