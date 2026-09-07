@@ -528,11 +528,13 @@ function QuizResults() {
                           {r.pharmacyName || <span className="subtle">—</span>}
                         </td>
                         <td>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-3)' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--s-4)' }}>
                             <span
-                              className={`score-dot ${reussite(r) ? 'score-dot--ok' : 'score-dot--low'}`}
+                              className={`r-badge r-badge--lg ${reussite(r) ? '' : 'is-wrong'}`}
                               aria-hidden="true"
-                            />
+                            >
+                              <Icon name={reussite(r) ? 'check' : 'close'} size={16} width={2.6} />
+                            </span>
                             <span className="apprenant-note">
                               {r.score} / {r.total}
                             </span>

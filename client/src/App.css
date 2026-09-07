@@ -3060,6 +3060,15 @@ a.recent-row {
   color: var(--err);
 }
 
+/* Variante utilisée là où la pastille réussite/échec doit se voir de loin
+   (tableau des participants, QuizResults.jsx) plutôt que se fondre dans une
+   liste dense de cartes déjà bordées de couleur (Results.jsx). Même paire de
+   couleurs ok/err que .r-badge, juste agrandie. */
+.r-badge--lg {
+  width: 28px;
+  height: 28px;
+}
+
 .r-card-num {
   font-size: var(--t-micro);
   font-weight: 700;
@@ -3082,7 +3091,8 @@ a.recent-row {
 
 .r-answer {
   display: flex;
-  gap: var(--s-3);
+  align-items: center;
+  gap: var(--s-4);
   padding: var(--s-4) var(--s-5);
   border-radius: var(--r-sm);
   font-size: var(--t-label);
@@ -3092,6 +3102,16 @@ a.recent-row {
 .r-answer b {
   flex-shrink: 0;
   font-weight: 600;
+}
+
+/* Coche/croix devant « Vous »/« Réponse » : mêmes icônes que .r-badge
+   (l'en-tête de la carte), répétées ici en plus grand pour qu'on n'ait pas à
+   lire les deux mots pour distinguer laquelle des deux lignes a été ratée —
+   la couleur seule (WCAG 1.4.1) ne portait déjà pas l'info, .r-answer--mine/
+   --good la donnaient par le texte "Vous"/"Réponse", cette icône l'ajoute en
+   un coup d'œil. */
+.r-answer .icon {
+  flex-shrink: 0;
 }
 
 .r-answer--mine {
@@ -3709,30 +3729,6 @@ a.recent-row {
 .breadcrumb-current {
   color: var(--text-2);
   font-weight: 600;
-}
-
-/* Point de la colonne Score : PUREMENT DÉCORATIF, jamais le seul porteur de
-   l'information (WCAG 1.4.1) — le score exact reste toujours écrit en toutes
-   lettres juste à côté (.apprenant-note), comme la barre de
-   .question-stat-titre porte déjà sa phrase en clair. Aucune exigence de
-   contraste ne s'applique donc à un aplat de 8px sans texte ni sémantique
-   propre (`aria-hidden="true"` côté JSX) ; --ok et --err sont repris tels
-   quels, déjà audités contre #fff (5,00:1 et 5,05:1, index.css l.108) pour
-   d'autres usages. */
-.score-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.score-dot--ok {
-  background: var(--ok);
-}
-
-.score-dot--low {
-  background: var(--err);
 }
 
 /* ---------- Écran formateur : Officines (maître-détail) ----------

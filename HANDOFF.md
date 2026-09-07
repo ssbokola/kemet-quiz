@@ -3,8 +3,8 @@
 **Dernière mise à jour :** 5 septembre 2026
 **Production :** https://kemet-quiz-production.up.railway.app
 **Dépôt :** https://github.com/ssbokola/kemet-quiz (branche `main`, auto-deploy Railway)
-**Dernier commit déployé :** `ca1941e` — 5 corrections de la revue de code du chantier navigation (§17)
-**Non encore déployé à cette mise à jour :** QR code de l'écran de partage agrandi (voir §17, sous-section « QR code agrandi »). Code écrit, testé (`npm test` 11/11, `npm run build`), en attente du feu vert pour le push.
+**Dernier commit déployé :** `5038a5d` — QR code de l'écran de partage agrandi (§17)
+**Non encore déployé à cette mise à jour :** iconographie coche/croix sur les réponses (voir §17, sous-section « Iconographie des réponses »). Code écrit, testé (`npm test` 11/11, `npm run build`), en attente du feu vert pour le push.
 
 ---
 
@@ -892,3 +892,13 @@ Demande directe : « je veux un qr code plus gros une fois le quizz créé ; bea
 **Résultat mesuré** (page de test isolée avec le vrai composant `QRCodeSVG`, quatre largeurs de conteneur explicites — le viewport émulé du navigateur de test ne prend pas toujours effet, contournement déjà utilisé le 03/09) : 234px à 320px de large (mobile étroit), 289px à 375px, 394px à 480px, puis le plafond de 420px atteint dès 720px (le palier de `.app-main--wide`) et conservé jusqu'à 1280px — aucun débordement à aucune largeur (`scrollWidth === clientWidth` du cadre partout). Plus de 2× la taille précédente sur desktop, sans jamais dépasser l'écran sur mobile.
 
 Vérifié : `npm test` (11/11), `npm run build`, page de test React isolée servie par le serveur de dev puis supprimée (même méthode que le 03/09 pour un écran protégé par mot de passe).
+
+### 05/09/2026 — Iconographie des réponses (formateur + participant)
+
+Demande directe : « je veux aussi une iconographie des réponses après chaque quizz ». Rendu validé au préalable avec l'utilisateur via deux aperçus (mockups HTML fidèles aux couleurs/typo réelles de l'app), avant d'écrire le moindre code — deux allers-retours : un premier gabarit, puis un second avec des icônes agrandies sur sa demande.
+
+**Écran formateur** (`QuizResults.jsx`, tableau des participants d'un quiz) : le point coloré de 8px (`.score-dot`, purement décoratif) est remplacé par une pastille coche/croix de 28px — `.r-badge--lg`, un nouveau modificateur du `.r-badge` déjà utilisé par l'écran de correction du participant (même paire de couleurs ok/err, juste agrandie). `.score-dot`/`.score-dot--ok`/`.score-dot--low` sont supprimées, plus aucun usage ailleurs (vérifié par grep avant suppression).
+
+**Écran du participant** (`Results.jsx`, détail d'une question ratée) : une icône coche/croix de 18px est ajoutée devant les libellés « Vous »/« Réponse » de `.r-answers` — jusque-là seule la carte de question portait une icône (`.r-badge` dans `.r-card-head`), pas les deux lignes de réponse elles-mêmes. `.r-answer` passe à `align-items: center` pour aligner l'icône sur le texte.
+
+Vérifié : `npm test` (11/11), `npm run build`, page de test React isolée reproduisant les deux écrans avec `Icon`/`.r-badge`/`.r-answer` réels, capture d'écran comparée point par point au rendu validé avec l'utilisateur (même méthode que pour le QR agrandi ci-dessus).

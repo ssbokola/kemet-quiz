@@ -333,10 +333,12 @@ function Results({ playerName, title, score, total, correction, onRetake }) {
             <p className="r-question">{item.question}</p>
             <div className="r-answers">
               <div className="r-answer r-answer--mine">
+                <Icon name="close" size={18} width={2.4} />
                 <b>Vous</b>
                 <span>{getOptionText(item.options, item.userAnswer)}</span>
               </div>
               <div className="r-answer r-answer--good">
+                <Icon name="check" size={18} width={2.4} />
                 <b>Réponse</b>
                 <span>{getOptionText(item.options, item.correctAnswer)}</span>
               </div>
